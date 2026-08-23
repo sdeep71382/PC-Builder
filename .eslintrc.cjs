@@ -76,6 +76,17 @@ module.exports = {
       ],
     },
 
+    // Test files
+    {
+      files: ["**/*.test.{ts,tsx}"],
+      plugins: ["@typescript-eslint"],
+      parser: "@typescript-eslint/parser",
+      extends: ["plugin:@typescript-eslint/recommended"],
+      rules: {
+        "@typescript-eslint/no-explicit-any": "off",
+      },
+    },
+
     // Node
     {
       files: [

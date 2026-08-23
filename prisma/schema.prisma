@@ -1,34 +1,96 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file.
+// Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
   provider = "sqlite"
   url      = "file:dev.sqlite"
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model Builder {
+  id          String   @id @default(cuid())
+  shopId      String
+  name        String
+  description String?
+  status      String   @default("draft")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  builderSteps BuilderStep[]
+  assignments  StepCatalogAssignment[]
+
+  @@index([shopId])
+  @@map("builders")
+}
+
+model BuilderStep {
+  id        String   @id @default(cuid())
+  shopId    String
+  builderId String
+  builder   Builder  @relation(fields: [builderId], references: [id], onDelete: Cascade)
+
+  name     String
+  position Int
+  enabled  Boolean @default(true)
+  required Boolean @default(true)
+  version  Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments StepCatalogAssignment[]
+
+  @@index([shopId])
+  @@index([builderId])
+  @@map("builder_steps")
+}
+
+model StepCatalogAssignment {
+  id        String       @id @default(cuid())
+  shopId    String
+
+  builderId String
+  builder   Builder @relation(fields: [builderId], references: [id], onDelete: Cascade)
+
+  stepId String
+  step   BuilderStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  referenceType String
+
+  shopifyProductId String?
+  shopifyVariantId String?
+
+  position Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shopId])
+  @@index([builderId])
+  @@index([stepId])
+  @@map("step_catalog_assignments")
 }

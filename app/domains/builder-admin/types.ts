@@ -1,0 +1,81 @@
+export type BuilderStatus = "draft" | "published" | "archived";
+
+export type CatalogReferenceType = "product" | "variant";
+
+export interface Builder {
+  id: string;
+  shopId: string;
+  name: string;
+  description: string | null;
+  status: BuilderStatus;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface BuilderStep {
+  id: string;
+  shopId: string;
+  builderId: string;
+  name: string;
+  position: number;
+  enabled: boolean;
+  required: boolean;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface StepCatalogAssignment {
+  id: string;
+  shopId: string;
+  builderId: string;
+  stepId: string;
+  referenceType: CatalogReferenceType;
+  shopifyProductId: string | null;
+  shopifyVariantId: string | null;
+  position: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface BuilderWithSteps extends Builder {
+  steps: BuilderStep[];
+}
+
+export interface BuilderStepWithAssignments extends BuilderStep {
+  assignments: StepCatalogAssignment[];
+}
+
+export interface ShopifyProductNode {
+  id: string;
+  title: string;
+}
+
+export interface ShopifyVariantNode {
+  id: string;
+  title: string;
+  product: ShopifyProductNode;
+}
+
+export type ShopifyCatalogResult =
+  | { type: "success"; products: ShopifyProductNode[]; variants: ShopifyVariantNode[] }
+  | { type: "failure"; message: string };
+
+export type ShopifyProductLookupResult =
+  | { type: "success"; product: ShopifyProductNode | null }
+  | { type: "failure"; message: string };
+
+export type ShopifyVariantLookupResult =
+  | { type: "success"; variant: ShopifyVariantNode | null }
+  | { type: "failure"; message: string };
+
+export interface BuilderValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ActionFeedback {
+  type: "success" | "validation" | "authorization" | "stale" | "temporary";
+  message: string;
+}
