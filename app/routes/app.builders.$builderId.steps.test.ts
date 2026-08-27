@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { loader as builderStepsLoader } from "./app.builders.$builderId.steps";
+import { action as builderStepsAction, loader as builderStepsLoader } from "./app.builders.$builderId.steps";
 
 vi.mock("../shopify.server", () => ({
   authenticate: {
@@ -8,6 +8,7 @@ vi.mock("../shopify.server", () => ({
 }));
 
 vi.mock("../domains/builder-admin/builder.server", () => ({
+  createDefaultPcBuilderSteps: vi.fn(),
   createStep: vi.fn(),
   deleteStep: vi.fn(),
   getStepsForBuilder: vi.fn(),
@@ -16,7 +17,10 @@ vi.mock("../domains/builder-admin/builder.server", () => ({
 }));
 
 import { authenticate } from "../shopify.server";
-import { getStepsForBuilder } from "../domains/builder-admin/builder.server";
+import {
+  createDefaultPcBuilderSteps,
+  getStepsForBuilder,
+} from "../domains/builder-admin/builder.server";
 
 describe("app.builders.$builderId.steps route", () => {
   beforeEach(() => {
@@ -43,5 +47,21 @@ describe("app.builders.$builderId.steps route", () => {
     const request = new Request("http://localhost/app/builders/builder-1/steps");
     const result = await builderStepsLoader({ request, params: { builderId: "builder-1" } } as any);
     expect(result.steps).toEqual([]);
+  });
+
+  it("creates default steps for an empty builder", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" } });
+    (createDefaultPcBuilderSteps as any).mockResolvedValue([]);
+
+    const formData = new FormData();
+    formData.set("intent", "create-defaults");
+    const request = new Request("http://localhost/app/builders/builder-1/steps", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await builderStepsAction({ request, params: { builderId: "builder-1" } } as any);
+    expect(response.status).toBe(200);
+    expect(createDefaultPcBuilderSteps).toHaveBeenCalledWith("shop-1", "builder-1");
   });
 });

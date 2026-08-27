@@ -19,6 +19,7 @@
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
     "test": "vitest run",
+    "seed:default-builders": "node prisma/seed-default-builders.mjs",
     "test:watch": "vitest"
   },
   "type": "module",

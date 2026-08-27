@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import type { Builder, BuilderStatus } from "../../domains/builder-admin/types";
+import type { BuilderStatus, BuilderWithSteps } from "../../domains/builder-admin/types";
 
 interface BuilderFormProps {
-  builder?: Builder;
+  builder?: BuilderWithSteps;
   feedback?: {
     type: "success" | "validation" | "authorization" | "stale" | "temporary";
     message: string;
@@ -32,31 +32,79 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
 
   const isEditing = Boolean(builder);
   const status = builder?.status as BuilderStatus | undefined;
+  const enabledStepCount = builder?.steps.filter((step) => step.enabled).length ?? 0;
+  const totalStepCount = builder?.steps.length ?? 0;
+  const canPublish = enabledStepCount > 0;
 
   return (
     <s-page heading={isEditing ? "Edit builder" : "Create builder"}>
-      {isEditing && status && (
-        <s-section heading="Status">
-          <s-badge tone={status === "published" ? "success" : status === "archived" ? "info" : "auto"}>
-            {status}
-          </s-badge>
-        </s-section>
-      )}
+      <div className="builder-admin">
+        <div className="builder-admin__header">
+          <div>
+            <p className="builder-admin__eyebrow">
+              {isEditing ? "Builder setup" : "New builder"}
+            </p>
+            <h1 className="builder-admin__title">
+              {isEditing ? builder?.name || "Untitled builder" : "Create a product builder"}
+            </h1>
+            <p className="builder-admin__subtitle">
+              Name the experience, define the steps customers will follow, then
+              assign Shopify collections to each step.
+            </p>
+          </div>
+          <div className="builder-admin__actions">
+            {isEditing && <s-button href="/app/builders">Back to builders</s-button>}
+            {isEditing && (
+              <s-button variant="primary" href={`/app/builders/${builder?.id}/steps`}>
+                Manage steps
+              </s-button>
+            )}
+          </div>
+        </div>
 
-      <fetcher.Form method="post">
-        <s-section heading="Details">
-          <s-text-field
-            name="name"
-            label="Name"
-            value={builder?.name ?? ""}
-            required
-            autocomplete="off"
-          />
-          <s-text-area
-            name="description"
-            label="Description"
-            value={builder?.description ?? ""}
-          />
+        {isEditing && status && (
+          <div className="builder-admin__grid builder-admin__grid--equal">
+            <div className="builder-card builder-card--metric">
+              <p className="builder-card__title">Status</p>
+              <s-badge tone={status === "published" ? "success" : status === "archived" ? "info" : "auto"}>
+                {status}
+              </s-badge>
+            </div>
+            <div className="builder-card builder-card--metric">
+              <p className="builder-card__title">Steps</p>
+              <div className="builder-stat">{totalStepCount}</div>
+              <p className="builder-card__text">{enabledStepCount} enabled</p>
+            </div>
+            <div className="builder-card builder-card--metric">
+              <p className="builder-card__title">Collection assignment</p>
+              <p className="builder-card__text">
+                Open steps to connect Shopify collections for each choice.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="builder-card">
+          <h2 className="builder-card__title">Builder details</h2>
+          <fetcher.Form method="post" className="builder-form">
+            <div className="builder-field">
+              <label htmlFor="builder-name">Name *</label>
+              <input
+                id="builder-name"
+                name="name"
+                defaultValue={builder?.name ?? ""}
+                required
+                autoComplete="off"
+              />
+            </div>
+            <div className="builder-field">
+              <label htmlFor="builder-description">Description</label>
+              <textarea
+                id="builder-description"
+                name="description"
+                defaultValue={builder?.description ?? ""}
+              />
+            </div>
           {builder && <input type="hidden" name="builderId" value={builder.id} />}
           <input type="hidden" name="version" value={builder?.version ?? 1} />
           <input type="hidden" name="statusAction" value="" />
@@ -64,16 +112,26 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
           <s-button variant="primary" type="submit" disabled={isLoading}>
             {isEditing ? "Save" : "Create"}
           </s-button>
-        </s-section>
-      </fetcher.Form>
+          </fetcher.Form>
+        </div>
 
       {isEditing && (
-        <s-section heading="Lifecycle">
+        <div className="builder-card">
+          <h2 className="builder-card__title">Publish controls</h2>
+          <p className="builder-card__text">
+            {canPublish
+              ? `${enabledStepCount} enabled step${enabledStepCount === 1 ? "" : "s"} ready for publishing.`
+              : "Add at least one enabled step before publishing this builder."}
+          </p>
+          <div className="builder-admin__actions" style={{ marginTop: "14px" }}>
+            <s-button href={`/app/builders/${builder?.id}/steps`}>
+              Manage steps
+            </s-button>
           {status === "draft" && (
             <fetcher.Form method="post">
               <input type="hidden" name="statusAction" value="publish" />
               <input type="hidden" name="version" value={builder?.version ?? 1} />
-              <s-button variant="primary" type="submit" disabled={isLoading}>
+              <s-button variant="primary" type="submit" disabled={isLoading || !canPublish}>
                 Publish
               </s-button>
             </fetcher.Form>
@@ -91,23 +149,25 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
             <fetcher.Form method="post">
               <input type="hidden" name="statusAction" value="publish" />
               <input type="hidden" name="version" value={builder?.version ?? 1} />
-              <s-button variant="primary" type="submit" disabled={isLoading}>
+              <s-button variant="primary" type="submit" disabled={isLoading || !canPublish}>
                 Republish
               </s-button>
             </fetcher.Form>
           )}
-        </s-section>
+          </div>
+        </div>
       )}
 
       {currentFeedback && currentFeedback.type !== "success" && (
-        <s-section>
+        <div className="builder-card">
           <div role="status" aria-live="polite">
             <s-banner tone={currentFeedback.type === "validation" ? "warning" : "critical"}>
               {currentFeedback.message}
             </s-banner>
           </div>
-        </s-section>
+        </div>
       )}
+      </div>
     </s-page>
   );
 }

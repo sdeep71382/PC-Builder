@@ -1,6 +1,6 @@
 export type BuilderStatus = "draft" | "published" | "archived";
 
-export type CatalogReferenceType = "product" | "variant";
+export type CatalogReferenceType = "collection" | "product" | "variant";
 
 export interface Builder {
   id: string;
@@ -32,6 +32,7 @@ export interface StepCatalogAssignment {
   builderId: string;
   stepId: string;
   referenceType: CatalogReferenceType;
+  shopifyCollectionId: string | null;
   shopifyProductId: string | null;
   shopifyVariantId: string | null;
   position: number | null;
@@ -52,6 +53,12 @@ export interface ShopifyProductNode {
   title: string;
 }
 
+export interface ShopifyCollectionNode {
+  id: string;
+  title: string;
+  handle: string;
+}
+
 export interface ShopifyVariantNode {
   id: string;
   title: string;
@@ -59,7 +66,16 @@ export interface ShopifyVariantNode {
 }
 
 export type ShopifyCatalogResult =
-  | { type: "success"; products: ShopifyProductNode[]; variants: ShopifyVariantNode[] }
+  | {
+      type: "success";
+      collections: ShopifyCollectionNode[];
+      products: ShopifyProductNode[];
+      variants: ShopifyVariantNode[];
+    }
+  | { type: "failure"; message: string };
+
+export type ShopifyCollectionLookupResult =
+  | { type: "success"; collection: ShopifyCollectionNode | null }
   | { type: "failure"; message: string };
 
 export type ShopifyProductLookupResult =

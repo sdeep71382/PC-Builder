@@ -21,6 +21,16 @@ import {
 
 const prisma = new PrismaClient();
 
+export const DEFAULT_PC_BUILDER_STEPS = [
+  "Processor",
+  "Motherboard",
+  "Memory",
+  "Graphics card",
+  "Storage",
+  "Power supply",
+  "Case",
+] as const;
+
 export async function listBuilders(shopId: string): Promise<Builder[]> {
   const builders = await prisma.builder.findMany({
     where: { shopId },
@@ -233,6 +243,32 @@ export async function createStep(
   });
 }
 
+export async function createDefaultPcBuilderSteps(
+  shopId: string,
+  builderId: string
+): Promise<BuilderStep[]> {
+  const existingSteps = await getStepsForBuilder(shopId, builderId);
+
+  if (existingSteps.length > 0) {
+    throw new Error("Default steps can only be added before custom steps exist.");
+  }
+
+  const createdSteps: BuilderStep[] = [];
+
+  for (const [index, name] of DEFAULT_PC_BUILDER_STEPS.entries()) {
+    createdSteps.push(
+      await createStep(shopId, builderId, {
+        name,
+        position: index + 1,
+        enabled: true,
+        required: true,
+      })
+    );
+  }
+
+  return createdSteps;
+}
+
 export async function updateStep(
   shopId: string,
   stepId: string,
@@ -398,6 +434,7 @@ export async function createCatalogAssignment(
     builderId: string;
     stepId: string;
     referenceType: CatalogReferenceType;
+    shopifyCollectionId?: string;
     shopifyProductId?: string;
     shopifyVariantId?: string;
     position?: number;
@@ -430,6 +467,7 @@ export async function createCatalogAssignment(
       builderId: data.builderId,
       stepId: data.stepId,
       referenceType: data.referenceType,
+      shopifyCollectionId: data.shopifyCollectionId,
       shopifyProductId: data.shopifyProductId,
       shopifyVariantId: data.shopifyVariantId,
       position: data.position,

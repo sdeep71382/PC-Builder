@@ -1,0 +1,17 @@
+api_version = "2026-10"
+
+[[extensions]]
+name = "PC Builder Cart Bundle"
+handle = "pc-builder-cart-bundle"
+uid = "7bb5cc6b-0539-9823-36a7-e53a187f0427110eb296"
+type = "function"
+description = "Merges PC Builder component cart lines into one bundled checkout line."
+
+  [[extensions.targeting]]
+  target = "purchase.cart-transform.run"
+  input_query = "src/run.graphql"
+  export = "run"
+
+  [extensions.build]
+  command = "npm run build"
+  path = "dist/function.wasm"

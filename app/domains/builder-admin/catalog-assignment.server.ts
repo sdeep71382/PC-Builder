@@ -1,6 +1,8 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type {
   ShopifyCatalogResult,
+  ShopifyCollectionLookupResult,
+  ShopifyCollectionNode,
   ShopifyProductLookupResult,
   ShopifyProductNode,
   ShopifyVariantLookupResult,
@@ -14,6 +16,18 @@ export async function lookupShopifyCatalog(
   admin: AdminApiContext
 ): Promise<ShopifyCatalogResult> {
   try {
+    const collections = await admin.graphql(`
+      query {
+        collections(first: 100) {
+          nodes {
+            id
+            title
+            handle
+          }
+        }
+      }
+    `);
+
     const products = await admin.graphql(`
       query {
         products(first: 100) {
@@ -40,6 +54,9 @@ export async function lookupShopifyCatalog(
       }
     `);
 
+    const collectionsData = (await collections.json()) as {
+      collections: { nodes: ShopifyCollectionNode[] };
+    };
     const productsData = (await products.json()) as {
       products: { nodes: ShopifyProductNode[] };
     };
@@ -49,9 +66,36 @@ export async function lookupShopifyCatalog(
 
     return {
       type: "success",
+      collections: collectionsData.collections.nodes,
       products: productsData.products.nodes,
       variants: variantsData.productVariants.nodes,
     };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : CATALOG_UNAVAILABLE_MESSAGE;
+    return { type: "failure", message: message || CATALOG_UNAVAILABLE_MESSAGE };
+  }
+}
+
+export async function findShopifyCollection(
+  admin: AdminApiContext,
+  shopifyCollectionId: string
+): Promise<ShopifyCollectionLookupResult> {
+  try {
+    const result = await admin.graphql(
+      `#graphql
+        query ($id: ID!) {
+          collection(id: $id) {
+            id
+            title
+            handle
+          }
+        }
+      `,
+      { variables: { id: shopifyCollectionId } }
+    );
+
+    const data = (await result.json()) as { collection: ShopifyCollectionNode | null };
+    return { type: "success", collection: data.collection ?? null };
   } catch (error) {
     const message = error instanceof Error ? error.message : CATALOG_UNAVAILABLE_MESSAGE;
     return { type: "failure", message: message || CATALOG_UNAVAILABLE_MESSAGE };

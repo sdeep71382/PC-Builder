@@ -73,10 +73,14 @@ export function validateStepPosition(position: number): BuilderValidationError |
 export function validateCatalogReferenceType(
   referenceType: unknown
 ): BuilderValidationError | null {
-  if (referenceType !== "product" && referenceType !== "variant") {
+  if (
+    referenceType !== "collection" &&
+    referenceType !== "product" &&
+    referenceType !== "variant"
+  ) {
     return {
       field: "referenceType",
-      message: "Reference type must be either product or variant.",
+      message: "Reference type must be collection, product, or variant.",
     };
   }
   return null;
@@ -88,6 +92,15 @@ export function validateCatalogAssignmentInput(
   const typeError = validateCatalogReferenceType(data.referenceType);
   if (typeError) {
     return typeError;
+  }
+
+  if (data.referenceType === "collection") {
+    if (!data.shopifyCollectionId || typeof data.shopifyCollectionId !== "string") {
+      return {
+        field: "shopifyCollectionId",
+        message: "Collection assignments require a valid Shopify collection ID.",
+      };
+    }
   }
 
   if (data.referenceType === "product") {

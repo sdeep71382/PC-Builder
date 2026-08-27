@@ -11,9 +11,11 @@ vi.mock("../domains/builder-admin/builder.server", () => ({
   createCatalogAssignment: vi.fn(),
   removeCatalogAssignment: vi.fn(),
   getCatalogAssignmentsForStep: vi.fn(),
+  getStepsForBuilder: vi.fn(),
 }));
 
 vi.mock("../domains/builder-admin/catalog-assignment.server", () => ({
+  findShopifyCollection: vi.fn(),
   findShopifyProduct: vi.fn(),
   findShopifyVariant: vi.fn(),
   lookupShopifyCatalog: vi.fn(),
@@ -24,8 +26,10 @@ import {
   createCatalogAssignment,
   removeCatalogAssignment,
   getCatalogAssignmentsForStep,
+  getStepsForBuilder,
 } from "../domains/builder-admin/builder.server";
 import {
+  findShopifyCollection,
   findShopifyProduct,
   findShopifyVariant,
   lookupShopifyCatalog,
@@ -41,15 +45,60 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
   it("loads assignments and the Shopify catalog", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
     (getCatalogAssignmentsForStep as any).mockResolvedValue([]);
-    (lookupShopifyCatalog as any).mockResolvedValue({ type: "success", products: [], variants: [] });
+    (lookupShopifyCatalog as any).mockResolvedValue({ type: "success", collections: [], products: [], variants: [] });
+    (getStepsForBuilder as any).mockResolvedValue([
+      { id: "step-1", name: "Processor" },
+    ]);
 
     const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog");
     const result = await stepCatalogLoader({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
     expect(result).toEqual({
       builderId: "builder-1",
       stepId: "step-1",
+      stepName: "Processor",
       assignments: [],
-      catalog: { type: "success", products: [], variants: [] },
+      catalog: { type: "success", collections: [], products: [], variants: [] },
+    });
+  });
+
+  it("creates a catalog assignment when the collection exists", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
+    (findShopifyCollection as any).mockResolvedValue({
+      type: "success",
+      collection: { id: "gid://shopify/Collection/1", title: "Processors", handle: "processors" },
+    });
+    (createCatalogAssignment as any).mockResolvedValue({
+      id: "assignment-1",
+      shopId: "shop-1",
+      builderId: "builder-1",
+      stepId: "step-1",
+      referenceType: "collection",
+      shopifyCollectionId: "gid://shopify/Collection/1",
+      shopifyProductId: undefined,
+      shopifyVariantId: undefined,
+      position: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const formData = new FormData();
+    formData.set("referenceType", "collection");
+    formData.set("shopifyCollectionId", "gid://shopify/Collection/1");
+    const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
+    expect(response.status).toBe(302);
+    expect(findShopifyCollection).toHaveBeenCalledWith(mockAdmin, "gid://shopify/Collection/1");
+    expect(createCatalogAssignment).toHaveBeenCalledWith("shop-1", {
+      builderId: "builder-1",
+      stepId: "step-1",
+      referenceType: "collection",
+      shopifyCollectionId: "gid://shopify/Collection/1",
+      shopifyProductId: undefined,
+      shopifyVariantId: undefined,
     });
   });
 
@@ -65,8 +114,9 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
       builderId: "builder-1",
       stepId: "step-1",
       referenceType: "product",
+      shopifyCollectionId: undefined,
       shopifyProductId: "gid://shopify/Product/1",
-      shopifyVariantId: null,
+      shopifyVariantId: undefined,
       position: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -87,8 +137,9 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
       builderId: "builder-1",
       stepId: "step-1",
       referenceType: "product",
+      shopifyCollectionId: undefined,
       shopifyProductId: "gid://shopify/Product/1",
-      shopifyVariantId: null,
+      shopifyVariantId: undefined,
     });
   });
 

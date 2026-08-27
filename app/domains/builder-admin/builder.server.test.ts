@@ -131,6 +131,7 @@ const { mockPrismaClient } = vi.hoisted(() => {
           builderId: data.builderId,
           stepId: data.stepId,
           referenceType: data.referenceType,
+          shopifyCollectionId: data.shopifyCollectionId ?? null,
           shopifyProductId: data.shopifyProductId ?? null,
           shopifyVariantId: data.shopifyVariantId ?? null,
           position: data.position ?? null,
@@ -171,6 +172,7 @@ vi.mock("@prisma/client", () => ({
 
 import {
   createBuilder,
+  createDefaultPcBuilderSteps,
   getBuilder,
   getBuilderWithSteps,
   updateBuilder,
@@ -282,6 +284,38 @@ describe("Builder Administration persistence (tenant isolation)", () => {
 
     const otherSteps = await getBuilderWithSteps("shop-h", otherBuilder.id);
     expect(otherSteps).toBeNull();
+  });
+
+  it("creates default PC builder steps in order for an empty builder", async () => {
+    const builder = await createBuilder("shop-h2", { name: "Defaults" });
+
+    const stepsResult = await createDefaultPcBuilderSteps("shop-h2", builder.id);
+
+    expect(stepsResult.map((step) => step.name)).toEqual([
+      "Processor",
+      "Motherboard",
+      "Memory",
+      "Graphics card",
+      "Storage",
+      "Power supply",
+      "Case",
+    ]);
+    expect(stepsResult.map((step) => step.position)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(stepsResult.every((step) => step.enabled && step.required)).toBe(true);
+  });
+
+  it("rejects default PC builder steps when custom steps already exist", async () => {
+    const builder = await createBuilder("shop-h3", { name: "Has Custom Step" });
+    await createStep("shop-h3", builder.id, {
+      name: "Custom",
+      position: 1,
+      enabled: true,
+      required: true,
+    });
+
+    await expect(
+      createDefaultPcBuilderSteps("shop-h3", builder.id)
+    ).rejects.toThrow("before custom steps exist");
   });
 
   it("deletes step-only assignments on step deletion", async () => {

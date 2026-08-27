@@ -17,7 +17,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const builder = await getBuilderWithSteps(session.shop, builderId);
 
   if (!builder) {
-    throw new Response("Not Found", { status: 404 });
+    throw redirect("/app/builders");
   }
 
   return { builder };
@@ -90,13 +90,6 @@ export default function BuilderEdit() {
   }
 
   return (
-    <>
-      <s-section slot="aside" heading="Builder configuration">
-        <s-paragraph>
-          <s-link href={`/app/builders/${builder.id}/steps`}>Manage steps</s-link>
-        </s-paragraph>
-      </s-section>
-      <BuilderForm builder={builder} />
-    </>
+    <BuilderForm builder={builder} />
   );
 }

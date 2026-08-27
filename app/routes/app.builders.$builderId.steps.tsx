@@ -3,6 +3,7 @@ import { useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   createStep,
+  createDefaultPcBuilderSteps,
   deleteStep,
   getStepsForBuilder,
   reorderSteps,
@@ -49,6 +50,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         enabled: formData.get("enabled") === "on",
         required: formData.get("required") === "on",
       });
+    } else if (intent === "create-defaults") {
+      await createDefaultPcBuilderSteps(session.shop, builderId);
     } else if (intent === "update") {
       await updateStep(session.shop, String(formData.get("stepId") ?? ""), {
         name: String(formData.get("name") ?? ""),

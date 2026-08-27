@@ -5,7 +5,7 @@ export default function AdditionalPage() {
         <s-paragraph>
           Use the Builders section to create, edit, and manage your
           PC-building experiences. Each builder can have multiple ordered steps,
-          and each step can reference existing Shopify products or variants.
+          and each step can reference existing Shopify collections.
         </s-paragraph>
       </s-section>
 
@@ -19,9 +19,9 @@ export default function AdditionalPage() {
 
       <s-section heading="Catalog assignments">
         <s-paragraph>
-          Assign existing Shopify products and variants to steps so merchants
+          Assign existing Shopify collections to steps so merchants
           can curate selectable commerce items for each stage of the builder.
-          Shopify remains the source of truth for product and variant details.
+          Shopify remains the source of truth for catalog details.
         </s-paragraph>
       </s-section>
     </s-page>

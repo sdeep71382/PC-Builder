@@ -15,44 +15,60 @@ function formatUpdatedAt(updatedAt: Date | string): string {
 export function BuilderList({ builders }: BuilderListProps) {
   return (
     <s-page heading="Builders">
-      {builders.length === 0 ? (
-        <s-section heading="No builders yet">
-          <s-paragraph>
-            Create your first builder to start configuring a PC-building experience.
-          </s-paragraph>
+      <div className="builder-admin">
+        <div className="builder-admin__header">
+          <div>
+            <p className="builder-admin__eyebrow">Builder library</p>
+            <h1 className="builder-admin__title">Manage customer configuration flows</h1>
+            <p className="builder-admin__subtitle">
+              Create builders, define the order of choices, and connect each step to
+              real Shopify collections.
+            </p>
+          </div>
+          <div className="builder-admin__actions">
           <s-button variant="primary" href="/app/builders/new">
             Create builder
           </s-button>
-        </s-section>
-      ) : (
-        <s-section heading="Your builders">
-          <s-button variant="primary" href="/app/builders/new">
-            Create builder
-          </s-button>
-          <s-stack direction="block" gap="base">
+          </div>
+        </div>
+
+        {builders.length === 0 ? (
+          <div className="builder-card">
+            <h2 className="builder-card__title">No builders yet</h2>
+            <p className="builder-card__text">
+              Start with one builder, add ordered steps, then assign Shopify
+              collections to each step.
+            </p>
+          </div>
+        ) : (
+          <div className="builder-card">
+            <h2 className="builder-card__title">Your builders</h2>
+            <div className="builder-list">
             {builders.map((builder) => (
-              <s-box
+              <div
                 key={builder.id}
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
+                className="builder-list__row"
               >
-                <s-stack direction="inline" gap="base" justifyContent="space-between">
-                <s-link href={`/app/builders/${builder.id}`}>
-                  {builder.name || "Untitled builder"}
-                </s-link>
-                <s-text tone="neutral">
-                  Updated {formatUpdatedAt(builder.updatedAt)}
-                </s-text>
+                <div>
+                  <s-link href={`/app/builders/${builder.id}`}>
+                    <span className="builder-list__name">
+                      {builder.name || "Untitled builder"}
+                    </span>
+                  </s-link>
+                  <div className="builder-list__meta">
+                    Updated {formatUpdatedAt(builder.updatedAt)}
+                  </div>
+                </div>
                 <s-badge tone={builder.status === "published" ? "success" : "auto"}>
                   {builder.status}
                 </s-badge>
-                </s-stack>
-              </s-box>
+                <s-button href={`/app/builders/${builder.id}`}>Open</s-button>
+              </div>
             ))}
-          </s-stack>
-        </s-section>
-      )}
+            </div>
+          </div>
+        )}
+      </div>
     </s-page>
   );
 }

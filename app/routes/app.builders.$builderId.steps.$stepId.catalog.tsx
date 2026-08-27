@@ -5,8 +5,10 @@ import {
   createCatalogAssignment,
   removeCatalogAssignment,
   getCatalogAssignmentsForStep,
+  getStepsForBuilder,
 } from "../domains/builder-admin/builder.server";
 import {
+  findShopifyCollection,
   findShopifyProduct,
   findShopifyVariant,
   lookupShopifyCatalog,
@@ -20,6 +22,10 @@ interface ActionData {
   };
 }
 
+function formString(value: FormDataEntryValue | null): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const builderId = params.builderId;
@@ -27,9 +33,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   if (!builderId || !stepId) {
     throw new Response("Not Found", { status: 404 });
   }
-  const assignments = await getCatalogAssignmentsForStep(session.shop, stepId);
-  const catalog = await lookupShopifyCatalog(admin);
-  return { builderId, stepId, assignments, catalog };
+  const [assignments, catalog, steps] = await Promise.all([
+    getCatalogAssignmentsForStep(session.shop, stepId),
+    lookupShopifyCatalog(admin),
+    getStepsForBuilder(session.shop, builderId),
+  ]);
+  const step = steps.find((candidate) => candidate.id === stepId);
+  return { builderId, stepId, stepName: step?.name ?? "Step", assignments, catalog };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -45,8 +55,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const assignmentId = formData.get("assignmentId");
   const referenceType = formData.get("referenceType");
-  const shopifyProductId = formData.get("shopifyProductId");
-  const shopifyVariantId = formData.get("shopifyVariantId");
+  const shopifyCollectionId = formString(formData.get("shopifyCollectionId"));
+  const shopifyProductId = formString(formData.get("shopifyProductId"));
+  const shopifyVariantId = formString(formData.get("shopifyVariantId"));
 
   if (assignmentId) {
     try {
@@ -58,7 +69,23 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return redirect(`/app/builders/${builderId}/steps/${stepId}/catalog`);
   }
 
-  if (referenceType === "product" && typeof shopifyProductId === "string" && shopifyProductId) {
+  if (referenceType === "collection" && shopifyCollectionId) {
+    const lookup = await findShopifyCollection(admin, shopifyCollectionId);
+    if (lookup.type === "failure") {
+      return Response.json({ feedback: { type: "temporary", message: lookup.message } }, { status: 503 });
+    }
+    if (!lookup.collection) {
+      return Response.json(
+        {
+          feedback: {
+            type: "validation",
+            message: "The selected collection is missing, invalid, or not available to this shop.",
+          },
+        },
+        { status: 400 },
+      );
+    }
+  } else if (referenceType === "product" && shopifyProductId) {
     const lookup = await findShopifyProduct(admin, shopifyProductId);
     if (lookup.type === "failure") {
       return Response.json({ feedback: { type: "temporary", message: lookup.message } }, { status: 503 });
@@ -74,7 +101,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         { status: 400 },
       );
     }
-  } else if (referenceType === "variant" && typeof shopifyVariantId === "string" && shopifyVariantId) {
+  } else if (referenceType === "variant" && shopifyVariantId) {
     const lookup = await findShopifyVariant(admin, shopifyVariantId);
     if (lookup.type === "failure") {
       return Response.json({ feedback: { type: "temporary", message: lookup.message } }, { status: 503 });
@@ -92,14 +119,15 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
   }
 
-  if (referenceType && (shopifyProductId || shopifyVariantId)) {
+  if (referenceType && (shopifyCollectionId || shopifyProductId || shopifyVariantId)) {
     try {
       await createCatalogAssignment(session.shop, {
         builderId,
         stepId,
-        referenceType: referenceType as "product" | "variant",
-        shopifyProductId: shopifyProductId as string | undefined,
-        shopifyVariantId: shopifyVariantId as string | undefined,
+        referenceType: referenceType as "collection" | "product" | "variant",
+        shopifyCollectionId,
+        shopifyProductId,
+        shopifyVariantId,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create assignment.";
@@ -116,11 +144,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function StepCatalog() {
-  const { assignments, catalog } = useLoaderData<typeof loader>();
+  const { assignments, builderId, stepName, catalog } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   return (
     <CatalogAssignmentPicker
       assignments={assignments}
+      builderId={builderId}
+      stepName={stepName}
       catalog={catalog}
       feedback={actionData?.feedback ?? null}
     />

@@ -1,0 +1,20 @@
+query RunInput {
+  cart {
+    lines {
+      id
+      quantity
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+        }
+      }
+      attribute(key: "_buildId") {
+        value
+      }
+      buildTitle: attribute(key: "_buildTitle") {
+        value
+      }
+    }
+  }
+}

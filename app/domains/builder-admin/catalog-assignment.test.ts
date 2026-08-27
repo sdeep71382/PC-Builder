@@ -13,6 +13,10 @@ describe("validateCatalogReferenceType", () => {
     expect(validateCatalogReferenceType("product")).toBeNull();
   });
 
+  it("accepts collection", () => {
+    expect(validateCatalogReferenceType("collection")).toBeNull();
+  });
+
   it("accepts variant", () => {
     expect(validateCatalogReferenceType("variant")).toBeNull();
   });
@@ -29,6 +33,23 @@ describe("validateCatalogAssignmentInput", () => {
         referenceType: "product",
       })
     ).not.toBeNull();
+  });
+
+  it("rejects collection without shopifyCollectionId", () => {
+    expect(
+      validateCatalogAssignmentInput({
+        referenceType: "collection",
+      })
+    ).not.toBeNull();
+  });
+
+  it("accepts collection with shopifyCollectionId", () => {
+    expect(
+      validateCatalogAssignmentInput({
+        referenceType: "collection",
+        shopifyCollectionId: "gid://shopify/Collection/1",
+      })
+    ).toBeNull();
   });
 
   it("rejects variant without shopifyVariantId", () => {

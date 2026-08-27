@@ -41,7 +41,7 @@ describe("app.builders.$builderId route", () => {
     expect(result).toEqual({ builder: mockBuilder });
   });
 
-  it("returns 404 for missing builder", async () => {
+  it("redirects stale or missing builder URLs to the builders list", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" } });
     (getBuilderWithSteps as any).mockResolvedValue(null);
 
@@ -52,7 +52,8 @@ describe("app.builders.$builderId route", () => {
     } catch (e) {
       error = e as Response;
     }
-    expect(error?.status).toBe(404);
+    expect(error?.status).toBe(302);
+    expect(error?.headers.get("Location")).toBe("/app/builders");
   });
 
   it("rejects stale saves", async () => {
