@@ -32,28 +32,24 @@ model Session {
 
 model Builder {
   id          String   @id @default(cuid())
+  publicId    String?  @unique
   shopId      String
   name        String
   description String?
   status      String   @default("draft")
+  isDefault   Boolean  @default(false)
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Power-supply / compatibility configuration (002-storefront-compatibility-widget).
-  // powerSupplyStepId intentionally has no Prisma @relation: it is validated at the
-  // application layer (must belong to this builder), matching this schema's existing
-  // convention of not FK-enforcing cross-references (e.g. shopifyProductId).
-  powerSupplyStepId       String?
-  headroomPercentage      Int     @default(20)
-  buildRetentionDays      Int     @default(30)
-  showOutOfStockGreyedOut Boolean @default(false)
-
   builderSteps BuilderStep[]
   assignments  StepCatalogAssignment[]
-  builds       Build[]
+  compatibilityRules CompatibilityRule[]
+  buildSessions BuildSession[]
+  orderAttributions OrderAttribution[]
 
   @@index([shopId])
+  @@index([shopId, isDefault])
   @@map("builders")
 }
 
@@ -72,9 +68,9 @@ model BuilderStep {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  assignments       StepCatalogAssignment[]
-  compatibilityTags CompatibilityTag[]
+  assignments StepCatalogAssignment[]
 
+  @@unique([builderId, position])
   @@index([shopId])
   @@index([builderId])
   @@map("builder_steps")
@@ -101,119 +97,139 @@ model StepCatalogAssignment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tagValues     TagValueAssignment[]
-  aiSuggestions AiTagSuggestion[]
-
   @@index([shopId])
   @@index([builderId])
   @@index([stepId])
   @@map("step_catalog_assignments")
 }
 
-model CompatibilityTag {
-  id        String      @id @default(cuid())
-  shopId    String
-  stepId    String
-  step      BuilderStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-  builderId String
-
-  name String
-  role String @default("standard")
+model SpecificationDefinition {
+  id       String @id @default(cuid())
+  shopId   String
+  category String
+  key      String
+  label    String
+  dataType String
+  unit     String?
+  required Boolean @default(false)
+  config   Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  values        TagValueAssignment[]
-  aiSuggestions AiTagSuggestion[]
+  productSpecifications ProductSpecification[]
 
-  @@unique([stepId, name])
+  @@unique([shopId, category, key])
   @@index([shopId])
-  @@index([stepId])
-  @@index([builderId])
-  @@map("compatibility_tags")
+  @@index([shopId, category])
+  @@map("specification_definitions")
 }
 
-model TagValueAssignment {
+model ProductSpecification {
   id     String @id @default(cuid())
   shopId String
 
-  tagId String
-  tag   CompatibilityTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  shopifyProductId String
+  shopifyVariantId String
 
-  assignmentId String
-  assignment   StepCatalogAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  specificationDefinitionId String
+  specificationDefinition   SpecificationDefinition @relation(fields: [specificationDefinitionId], references: [id], onDelete: Cascade)
 
-  value String
+  value    Json
+  source   String  @default("manual")
+  verified Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tagId, assignmentId])
+  @@unique([shopId, shopifyVariantId, specificationDefinitionId])
   @@index([shopId])
-  @@index([assignmentId])
-  @@map("tag_value_assignments")
+  @@index([shopId, shopifyProductId])
+  @@index([shopId, shopifyVariantId])
+  @@index([specificationDefinitionId])
+  @@map("product_specifications")
 }
 
-model Build {
+model CompatibilityRule {
   id        String  @id @default(cuid())
   shopId    String
   builderId String
   builder   Builder @relation(fields: [builderId], references: [id], onDelete: Cascade)
 
-  token String @unique
+  sourceCategory String
+  sourceField    String
+  operator       String
+  targetCategory String
+  targetField    String
+  comparisonValue Json?
 
-  selections Json
-
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
-  addedToCartAt DateTime?
-  convertedAt   DateTime?
-
-  lastActivityAt DateTime @default(now())
-  expiresAt      DateTime
+  severity String  @default("error")
+  enabled  Boolean @default(true)
+  message  String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([shopId])
   @@index([builderId])
-  @@index([token])
-  @@map("builds")
+  @@index([shopId, builderId])
+  @@map("compatibility_rules")
 }
 
-model AiTagSuggestion {
-  id     String @id @default(cuid())
+model BuildSession {
+  id String @id @default(cuid())
+  publicSessionId String @unique
   shopId String
-
-  tagId String
-  tag   CompatibilityTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  assignmentId String
-  assignment   StepCatalogAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-
-  suggestedValue String
-  source         String
-  status         String @default("pending")
-
-  createdAt  DateTime  @default(now())
-  reviewedAt DateTime?
-
-  @@index([shopId])
-  @@index([tagId])
-  @@index([assignmentId])
-  @@map("ai_tag_suggestions")
-}
-
-model AiIntegration {
-  id     String @id @default(cuid())
-  shopId String @unique
-
-  geminiApiKeyEncrypted String?
-  builtInAiEntitled     Boolean   @default(false)
-  disclosureAcceptedAt  DateTime?
-
+  builderId String
+  builder Builder @relation(fields: [builderId], references: [id], onDelete: Cascade)
+  status String @default("STARTED")
+  currency String?
+  buildValue Decimal?
+  startedAt DateTime @default(now())
+  validatedAt DateTime?
+  cartAddedAt DateTime?
+  completedAt DateTime?
+  shopifyOrderId String?
+  selections BuildSelection[]
+  orderAttributions OrderAttribution[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@index([shopId])
+  @@index([shopId, builderId])
+  @@map("build_sessions")
+}
 
-  @@map("ai_integrations")
+model BuildSelection {
+  id String @id @default(cuid())
+  buildSessionId String
+  buildSession BuildSession @relation(fields: [buildSessionId], references: [id], onDelete: Cascade)
+  stepId String
+  shopifyProductId String
+  shopifyVariantId String
+  quantity Int @default(1)
+  priceSnapshot Decimal?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([buildSessionId, stepId])
+  @@index([shopifyVariantId])
+  @@map("build_selections")
+}
+
+model OrderAttribution {
+  id String @id @default(cuid())
+  shopId String
+  builderId String
+  builder Builder @relation(fields: [builderId], references: [id], onDelete: Cascade)
+  buildSessionId String
+  buildSession BuildSession @relation(fields: [buildSessionId], references: [id], onDelete: Cascade)
+  shopifyOrderId String
+  shopifyOrderName String?
+  currency String?
+  attributedValue Decimal?
+  orderTotal Decimal?
+  createdAt DateTime @default(now())
+  @@unique([shopId, shopifyOrderId, buildSessionId])
+  @@index([shopId])
+  @@index([shopId, builderId])
+  @@map("order_attributions")
 }

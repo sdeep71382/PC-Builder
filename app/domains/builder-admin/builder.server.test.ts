@@ -35,14 +35,16 @@ const { mockPrismaClient } = vi.hoisted(() => {
           .sort((a, b) => a.position - b.position);
         return { ...builder, builderSteps };
       }),
-      create: vi.fn(({ data }: { data: { shopId: string; name: string; description?: string } }) => {
+      create: vi.fn(({ data }: { data: { shopId: string; name: string; description?: string; isDefault?: boolean } }) => {
         const id = nextBuilderId();
         const builder: Builder = {
           id,
+          publicId: `pb_${id.replace(/[^a-z0-9]/g, "0").padEnd(32, "0").slice(0, 32)}`,
           shopId: data.shopId,
           name: data.name,
           description: data.description ?? null,
           status: "draft",
+          isDefault: data.isDefault ?? false,
           version: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -57,10 +59,23 @@ const { mockPrismaClient } = vi.hoisted(() => {
         builders[where.id] = updated;
         return updated;
       }),
-      count: vi.fn(({ where }: { where: { builderId: string; shopId: string; enabled: boolean } }) => {
-        return Object.values(steps).filter(
-          (s) => s.builderId === where.builderId && s.shopId === where.shopId && s.enabled === where.enabled
-        ).length;
+      count: vi.fn(({ where }: { where: { shopId: string; status?: string; isDefault?: boolean } }) => {
+        return Object.values(builders).filter((b) => {
+          if (b.shopId !== where.shopId) return false;
+          if (where.status && b.status !== where.status) return false;
+          if (where.isDefault !== undefined && b.isDefault !== where.isDefault) return false;
+          return true;
+        }).length;
+      }),
+      updateMany: vi.fn(({ where, data }: { where: { shopId: string; isDefault?: boolean }; data: Partial<Builder> }) => {
+        for (const [id, builder] of Object.entries(builders)) {
+          if (
+            builder.shopId === where.shopId &&
+            (where.isDefault === undefined || builder.isDefault === where.isDefault)
+          ) {
+            builders[id] = { ...builder, ...data, updatedAt: new Date() };
+          }
+        }
       }),
     },
     builderStep: {
@@ -69,8 +84,15 @@ const { mockPrismaClient } = vi.hoisted(() => {
           .filter((s) => s.builderId === where.builderId && s.shopId === where.shopId)
           .sort((a, b) => a.position - b.position);
       }),
-      findFirst: vi.fn(({ where }: { where: { id: string; shopId: string } }) => {
-        return Object.values(steps).find((s) => s.id === where.id && s.shopId === where.shopId) || null;
+      findFirst: vi.fn(({ where }: { where: { id: string; shopId: string; builderId?: string } }) => {
+        return (
+          Object.values(steps).find(
+            (s) =>
+              s.id === where.id &&
+              s.shopId === where.shopId &&
+              (!where.builderId || s.builderId === where.builderId)
+          ) || null
+        );
       }),
       create: vi.fn(({ data }: { data: any }) => {
         const id = nextStepId();
@@ -148,9 +170,13 @@ const { mockPrismaClient } = vi.hoisted(() => {
         }
         return assignment;
       }),
-      deleteMany: vi.fn(({ where }: { where: { stepId: string; shopId: string } }) => {
+      deleteMany: vi.fn(({ where }: { where: { stepId: string; shopId: string; referenceType?: string } }) => {
         for (const [key, assignment] of Object.entries(assignments)) {
-          if (assignment.stepId === where.stepId && assignment.shopId === where.shopId) {
+          if (
+            assignment.stepId === where.stepId &&
+            assignment.shopId === where.shopId &&
+            (!where.referenceType || assignment.referenceType === where.referenceType)
+          ) {
             delete assignments[key];
           }
         }
@@ -175,6 +201,7 @@ import {
   createDefaultPcBuilderSteps,
   getBuilder,
   getBuilderWithSteps,
+  makeBuilderDefault,
   updateBuilder,
   updateBuilderStatus,
   listBuilders,
@@ -182,6 +209,7 @@ import {
   deleteStep,
   reorderSteps,
   createCatalogAssignment,
+  replaceStepCollectionAssignment,
   removeCatalogAssignment,
   getCatalogAssignmentsForStep,
 } from "./builder.server";
@@ -261,6 +289,55 @@ describe("Builder Administration persistence (tenant isolation)", () => {
     ).rejects.toThrow("Stale save");
   });
 
+  it("sets one published builder as the shop default", async () => {
+    const first = await createBuilder("shop-default", { name: "First" });
+    await createStep("shop-default", first.id, {
+      name: "Step",
+      position: 1,
+      enabled: true,
+      required: true,
+    });
+    const publishedFirst = await updateBuilderStatus(
+      "shop-default",
+      first.id,
+      "published",
+      first.version
+    );
+
+    const second = await createBuilder("shop-default", { name: "Second" });
+    await createStep("shop-default", second.id, {
+      name: "Step",
+      position: 1,
+      enabled: true,
+      required: true,
+    });
+    const publishedSecond = await updateBuilderStatus(
+      "shop-default",
+      second.id,
+      "published",
+      second.version
+    );
+
+    const defaultBuilder = await makeBuilderDefault(
+      "shop-default",
+      publishedSecond.id,
+      publishedSecond.version
+    );
+    const builders = await listBuilders("shop-default");
+
+    expect(defaultBuilder.isDefault).toBe(true);
+    expect(builders.find((builder) => builder.id === publishedFirst.id)?.isDefault).toBe(false);
+    expect(builders.find((builder) => builder.id === publishedSecond.id)?.isDefault).toBe(true);
+  });
+
+  it("does not allow a draft builder to become the default storefront builder", async () => {
+    const builder = await createBuilder("shop-draft-default", { name: "Draft" });
+
+    await expect(
+      makeBuilderDefault("shop-draft-default", builder.id, builder.version)
+    ).rejects.toThrow("Only published builders");
+  });
+
   it("isolates steps by shopId and builderId", async () => {
     const builder = await createBuilder("shop-h", { name: "With Steps" });
     const otherBuilder = await createBuilder("shop-i", { name: "Other" });
@@ -334,7 +411,7 @@ describe("Builder Administration persistence (tenant isolation)", () => {
       shopifyProductId: "gid://shopify/Product/1",
     });
 
-    await deleteStep("shop-j", step.id);
+    await deleteStep("shop-j", builder.id, step.id);
 
     const assignments = await getCatalogAssignmentsForStep("shop-j", step.id);
     expect(assignments).toHaveLength(0);
@@ -363,6 +440,75 @@ describe("Builder Administration persistence (tenant isolation)", () => {
     await expect(
       removeCatalogAssignment("shop-k", "non-existent")
     ).rejects.toThrow("not found");
+  });
+
+  it("replaces an existing collection assignment for the same step", async () => {
+    const builder = await createBuilder("shop-k2", { name: "Replace Collection" });
+    const step = await createStep("shop-k2", builder.id, {
+      name: "Processor",
+      position: 1,
+      enabled: true,
+      required: true,
+    });
+
+    await replaceStepCollectionAssignment("shop-k2", {
+      builderId: builder.id,
+      stepId: step.id,
+      shopifyCollectionId: "gid://shopify/Collection/1",
+    });
+
+    await replaceStepCollectionAssignment("shop-k2", {
+      builderId: builder.id,
+      stepId: step.id,
+      shopifyCollectionId: "gid://shopify/Collection/2",
+    });
+
+    const stepAssignments = await getCatalogAssignmentsForStep("shop-k2", step.id);
+    const collectionAssignments = stepAssignments.filter(
+      (assignment) => assignment.referenceType === "collection"
+    );
+
+    expect(collectionAssignments).toHaveLength(1);
+    expect(collectionAssignments[0].shopifyCollectionId).toBe("gid://shopify/Collection/2");
+  });
+
+  it("rejects replacing a collection assignment for a step outside the builder", async () => {
+    const builderA = await createBuilder("shop-k3", { name: "Builder A" });
+    const builderB = await createBuilder("shop-k3", { name: "Builder B" });
+    const step = await createStep("shop-k3", builderB.id, {
+      name: "Other builder step",
+      position: 1,
+      enabled: true,
+      required: true,
+    });
+
+    await expect(
+      replaceStepCollectionAssignment("shop-k3", {
+        builderId: builderA.id,
+        stepId: step.id,
+        shopifyCollectionId: "gid://shopify/Collection/1",
+      })
+    ).rejects.toThrow("Step not found");
+  });
+
+  it("rejects catalog assignment creation for a step outside the builder", async () => {
+    const builderA = await createBuilder("shop-k4", { name: "Builder A" });
+    const builderB = await createBuilder("shop-k4", { name: "Builder B" });
+    const step = await createStep("shop-k4", builderB.id, {
+      name: "Other builder step",
+      position: 1,
+      enabled: true,
+      required: true,
+    });
+
+    await expect(
+      createCatalogAssignment("shop-k4", {
+        builderId: builderA.id,
+        stepId: step.id,
+        referenceType: "product",
+        shopifyProductId: "gid://shopify/Product/1",
+      })
+    ).rejects.toThrow("Step not found");
   });
 
   it("normalizes step positions on reorder", async () => {

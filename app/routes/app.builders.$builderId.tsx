@@ -3,6 +3,7 @@ import { Outlet, redirect, useLoaderData, useLocation } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   getBuilderWithSteps,
+  makeBuilderDefault,
   updateBuilder,
   updateBuilderStatus,
 } from "../domains/builder-admin/builder.server";
@@ -58,6 +59,25 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     });
   }
 
+  if (statusAction === "makeDefault") {
+    try {
+      await makeBuilderDefault(session.shop, builderId, version);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to set default builder.";
+      const type = message.includes("Stale save") ? "stale" as const : "validation" as const;
+      return new Response(JSON.stringify({ feedback: { type, message } }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return Response.json({
+      feedback: {
+        type: "success",
+        message: "Default storefront builder updated.",
+      },
+    });
+  }
+
   try {
     await updateBuilder(session.shop, builderId, {
       name: typeof name === "string" ? name : "",
@@ -83,7 +103,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 export default function BuilderEdit() {
   const { builder } = useLoaderData<typeof loader>();
   const location = useLocation();
-  const isChildRoute = location.pathname.includes(`/app/builders/${builder.id}/steps`);
+  const isChildRoute = location.pathname !== `/app/builders/${builder.id}`;
 
   if (isChildRoute) {
     return <Outlet />;

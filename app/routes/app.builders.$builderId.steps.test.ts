@@ -19,7 +19,9 @@ vi.mock("../domains/builder-admin/builder.server", () => ({
 import { authenticate } from "../shopify.server";
 import {
   createDefaultPcBuilderSteps,
+  deleteStep,
   getStepsForBuilder,
+  updateStep,
 } from "../domains/builder-admin/builder.server";
 
 describe("app.builders.$builderId.steps route", () => {
@@ -63,5 +65,48 @@ describe("app.builders.$builderId.steps route", () => {
     const response = await builderStepsAction({ request, params: { builderId: "builder-1" } } as any);
     expect(response.status).toBe(200);
     expect(createDefaultPcBuilderSteps).toHaveBeenCalledWith("shop-1", "builder-1");
+  });
+
+  it("updates a step through the builder-scoped service", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" } });
+    (updateStep as any).mockResolvedValue({ id: "step-1" });
+
+    const formData = new FormData();
+    formData.set("intent", "update");
+    formData.set("stepId", "step-1");
+    formData.set("name", "Processor");
+    formData.set("enabled", "on");
+    formData.set("required", "on");
+    formData.set("version", "3");
+    const request = new Request("http://localhost/app/builders/builder-1/steps", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await builderStepsAction({ request, params: { builderId: "builder-1" } } as any);
+    expect(response.status).toBe(200);
+    expect(updateStep).toHaveBeenCalledWith("shop-1", "builder-1", "step-1", {
+      name: "Processor",
+      enabled: true,
+      required: true,
+      version: 3,
+    });
+  });
+
+  it("deletes a step through the builder-scoped service", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" } });
+    (deleteStep as any).mockResolvedValue(undefined);
+
+    const formData = new FormData();
+    formData.set("intent", "delete");
+    formData.set("stepId", "step-1");
+    const request = new Request("http://localhost/app/builders/builder-1/steps", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await builderStepsAction({ request, params: { builderId: "builder-1" } } as any);
+    expect(response.status).toBe(200);
+    expect(deleteStep).toHaveBeenCalledWith("shop-1", "builder-1", "step-1");
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useFetcher } from "react-router";
+import { Link, useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type { BuilderStatus, BuilderWithSteps } from "../../domains/builder-admin/types";
 
@@ -59,6 +59,19 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
                 Manage steps
               </s-button>
             )}
+            {isEditing && (
+              <s-button href={`/app/specifications?builderId=${builder?.id}`}>
+                Product specifications
+              </s-button>
+            )}
+            {isEditing && (
+              <Link
+                className="builder-button-link"
+                to={`/app/builders/${builder?.id}/rules`}
+              >
+                Compatibility rules
+              </Link>
+            )}
           </div>
         </div>
 
@@ -66,9 +79,12 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
           <div className="builder-admin__grid builder-admin__grid--equal">
             <div className="builder-card builder-card--metric">
               <p className="builder-card__title">Status</p>
-              <s-badge tone={status === "published" ? "success" : status === "archived" ? "info" : "auto"}>
-                {status}
-              </s-badge>
+              <div className="builder-badge-row">
+                <s-badge tone={status === "published" ? "success" : status === "archived" ? "info" : "auto"}>
+                  {status}
+                </s-badge>
+                {builder?.isDefault && <s-badge tone="info">default storefront builder</s-badge>}
+              </div>
             </div>
             <div className="builder-card builder-card--metric">
               <p className="builder-card__title">Steps</p>
@@ -127,6 +143,15 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
             <s-button href={`/app/builders/${builder?.id}/steps`}>
               Manage steps
             </s-button>
+          {status === "published" && !builder?.isDefault && (
+            <fetcher.Form method="post">
+              <input type="hidden" name="statusAction" value="makeDefault" />
+              <input type="hidden" name="version" value={builder?.version ?? 1} />
+              <s-button type="submit" disabled={isLoading}>
+                Make default storefront builder
+              </s-button>
+            </fetcher.Form>
+          )}
           {status === "draft" && (
             <fetcher.Form method="post">
               <input type="hidden" name="statusAction" value="publish" />

@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useActionData, useLoaderData } from "react-router";
+import { Outlet, useActionData, useLoaderData, useLocation } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   createStep,
@@ -53,14 +53,14 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     } else if (intent === "create-defaults") {
       await createDefaultPcBuilderSteps(session.shop, builderId);
     } else if (intent === "update") {
-      await updateStep(session.shop, String(formData.get("stepId") ?? ""), {
+      await updateStep(session.shop, builderId, String(formData.get("stepId") ?? ""), {
         name: String(formData.get("name") ?? ""),
         enabled: formData.get("enabled") === "on",
         required: formData.get("required") === "on",
         version: Number(formData.get("version")),
       });
     } else if (intent === "delete") {
-      await deleteStep(session.shop, String(formData.get("stepId") ?? ""));
+      await deleteStep(session.shop, builderId, String(formData.get("stepId") ?? ""));
     } else if (intent === "move-up" || intent === "move-down") {
       const stepId = String(formData.get("stepId") ?? "");
       const currentSteps = await getStepsForBuilder(session.shop, builderId);
@@ -98,6 +98,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 export default function BuilderSteps() {
   const { builderId, steps } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
+  const location = useLocation();
+  const isChildRoute = location.pathname !== `/app/builders/${builderId}/steps`;
+
+  if (isChildRoute) {
+    return <Outlet />;
+  }
+
   return (
     <StepEditor
       steps={steps}

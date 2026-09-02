@@ -8,7 +8,7 @@ vi.mock("../shopify.server", () => ({
 }));
 
 vi.mock("../domains/builder-admin/builder.server", () => ({
-  createCatalogAssignment: vi.fn(),
+  replaceStepCollectionAssignment: vi.fn(),
   removeCatalogAssignment: vi.fn(),
   getCatalogAssignmentsForStep: vi.fn(),
   getStepsForBuilder: vi.fn(),
@@ -16,22 +16,18 @@ vi.mock("../domains/builder-admin/builder.server", () => ({
 
 vi.mock("../domains/builder-admin/catalog-assignment.server", () => ({
   findShopifyCollection: vi.fn(),
-  findShopifyProduct: vi.fn(),
-  findShopifyVariant: vi.fn(),
   lookupShopifyCatalog: vi.fn(),
 }));
 
 import { authenticate } from "../shopify.server";
 import {
-  createCatalogAssignment,
+  replaceStepCollectionAssignment,
   removeCatalogAssignment,
   getCatalogAssignmentsForStep,
   getStepsForBuilder,
 } from "../domains/builder-admin/builder.server";
 import {
   findShopifyCollection,
-  findShopifyProduct,
-  findShopifyVariant,
   lookupShopifyCatalog,
 } from "../domains/builder-admin/catalog-assignment.server";
 
@@ -61,13 +57,20 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
     });
   });
 
-  it("creates a catalog assignment when the collection exists", async () => {
+  it("assigns a collection when the collection exists", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
     (findShopifyCollection as any).mockResolvedValue({
       type: "success",
-      collection: { id: "gid://shopify/Collection/1", title: "Processors", handle: "processors" },
+      collection: {
+        id: "gid://shopify/Collection/1",
+        title: "Processors",
+        handle: "processors",
+        image: null,
+        productCount: 8,
+      },
     });
-    (createCatalogAssignment as any).mockResolvedValue({
+    (replaceStepCollectionAssignment as any).mockResolvedValue({
       id: "assignment-1",
       shopId: "shop-1",
       builderId: "builder-1",
@@ -92,35 +95,49 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
     const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
     expect(response.status).toBe(302);
     expect(findShopifyCollection).toHaveBeenCalledWith(mockAdmin, "gid://shopify/Collection/1");
-    expect(createCatalogAssignment).toHaveBeenCalledWith("shop-1", {
+    expect(replaceStepCollectionAssignment).toHaveBeenCalledWith("shop-1", {
       builderId: "builder-1",
       stepId: "step-1",
-      referenceType: "collection",
       shopifyCollectionId: "gid://shopify/Collection/1",
-      shopifyProductId: undefined,
-      shopifyVariantId: undefined,
     });
   });
 
-  it("creates a catalog assignment when the product exists", async () => {
+  it("replaces a collection assignment by using the replace service", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
-    (findShopifyProduct as any).mockResolvedValue({
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
+    (findShopifyCollection as any).mockResolvedValue({
       type: "success",
-      product: { id: "gid://shopify/Product/1", title: "Widget" },
+      collection: {
+        id: "gid://shopify/Collection/2",
+        title: "Motherboards",
+        handle: "motherboards",
+        image: null,
+        productCount: 8,
+      },
     });
-    (createCatalogAssignment as any).mockResolvedValue({
-      id: "assignment-1",
-      shopId: "shop-1",
+    (replaceStepCollectionAssignment as any).mockResolvedValue({ id: "assignment-2" });
+
+    const formData = new FormData();
+    formData.set("referenceType", "collection");
+    formData.set("shopifyCollectionId", "gid://shopify/Collection/2");
+    const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
+
+    expect(response.status).toBe(302);
+    expect(replaceStepCollectionAssignment).toHaveBeenCalledWith("shop-1", {
       builderId: "builder-1",
       stepId: "step-1",
-      referenceType: "product",
-      shopifyCollectionId: undefined,
-      shopifyProductId: "gid://shopify/Product/1",
-      shopifyVariantId: undefined,
-      position: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      shopifyCollectionId: "gid://shopify/Collection/2",
     });
+  });
+
+  it("rejects product assignment on the collection-only route", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
 
     const formData = new FormData();
     formData.set("referenceType", "product");
@@ -131,25 +148,20 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
     });
 
     const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
-    expect(response.status).toBe(302);
-    expect(findShopifyProduct).toHaveBeenCalledWith(mockAdmin, "gid://shopify/Product/1");
-    expect(createCatalogAssignment).toHaveBeenCalledWith("shop-1", {
-      builderId: "builder-1",
-      stepId: "step-1",
-      referenceType: "product",
-      shopifyCollectionId: undefined,
-      shopifyProductId: "gid://shopify/Product/1",
-      shopifyVariantId: undefined,
-    });
+    expect(response.status).toBe(400);
+    const data = await response.json();
+    expect(data.feedback.type).toBe("validation");
+    expect(replaceStepCollectionAssignment).not.toHaveBeenCalled();
   });
 
-  it("rejects assignment when the product does not exist in Shopify", async () => {
+  it("rejects assignment when the collection does not exist in Shopify", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
-    (findShopifyProduct as any).mockResolvedValue({ type: "success", product: null });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
+    (findShopifyCollection as any).mockResolvedValue({ type: "success", collection: null });
 
     const formData = new FormData();
-    formData.set("referenceType", "product");
-    formData.set("shopifyProductId", "gid://shopify/Product/999999");
+    formData.set("referenceType", "collection");
+    formData.set("shopifyCollectionId", "gid://shopify/Collection/999999");
     const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog", {
       method: "POST",
       body: formData,
@@ -159,16 +171,17 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
     expect(response.status).toBe(400);
     const data = await response.json();
     expect(data.feedback.type).toBe("validation");
-    expect(createCatalogAssignment).not.toHaveBeenCalled();
+    expect(replaceStepCollectionAssignment).not.toHaveBeenCalled();
   });
 
-  it("returns temporary feedback when the Shopify lookup fails", async () => {
+  it("returns temporary feedback when the Shopify collection lookup fails", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
-    (findShopifyVariant as any).mockResolvedValue({ type: "failure", message: "Shopify is unavailable" });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
+    (findShopifyCollection as any).mockResolvedValue({ type: "failure", message: "Shopify is unavailable" });
 
     const formData = new FormData();
-    formData.set("referenceType", "variant");
-    formData.set("shopifyVariantId", "gid://shopify/ProductVariant/1");
+    formData.set("referenceType", "collection");
+    formData.set("shopifyCollectionId", "gid://shopify/Collection/1");
     const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog", {
       method: "POST",
       body: formData,
@@ -178,11 +191,13 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
     expect(response.status).toBe(503);
     const data = await response.json();
     expect(data.feedback).toEqual({ type: "temporary", message: "Shopify is unavailable" });
-    expect(createCatalogAssignment).not.toHaveBeenCalled();
+    expect(replaceStepCollectionAssignment).not.toHaveBeenCalled();
   });
 
   it("removes a catalog assignment", async () => {
     (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
+    (getCatalogAssignmentsForStep as any).mockResolvedValue([{ id: "assignment-1" }]);
     (removeCatalogAssignment as any).mockResolvedValue(undefined);
 
     const formData = new FormData();
@@ -195,5 +210,40 @@ describe("app.builders.$builderId.steps.$stepId.catalog route", () => {
     const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
     expect(response.status).toBe(302);
     expect(removeCatalogAssignment).toHaveBeenCalledWith("shop-1", "assignment-1");
+  });
+
+  it("rejects removal when the assignment is not on the step", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "step-1", name: "Processor" }]);
+    (getCatalogAssignmentsForStep as any).mockResolvedValue([{ id: "assignment-on-other-step" }]);
+
+    const formData = new FormData();
+    formData.set("assignmentId", "assignment-1");
+    const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
+    expect(response.status).toBe(404);
+    expect(removeCatalogAssignment).not.toHaveBeenCalled();
+  });
+
+  it("rejects action when the step is not part of the builder", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" }, admin: mockAdmin });
+    (getStepsForBuilder as any).mockResolvedValue([{ id: "different-step", name: "Other" }]);
+
+    const formData = new FormData();
+    formData.set("referenceType", "collection");
+    formData.set("shopifyCollectionId", "gid://shopify/Collection/1");
+    const request = new Request("http://localhost/app/builders/builder-1/steps/step-1/catalog", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await stepCatalogAction({ request, params: { builderId: "builder-1", stepId: "step-1" } } as any);
+    expect(response.status).toBe(404);
+    expect(findShopifyCollection).not.toHaveBeenCalled();
+    expect(replaceStepCollectionAssignment).not.toHaveBeenCalled();
   });
 });

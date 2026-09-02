@@ -1,0 +1,38 @@
+{{ 'pc-builder.css' | asset_url | stylesheet_tag }}
+
+<div
+  class="pc-builder-widget"
+  data-pc-builder-root
+  data-proxy-path="/apps/pc-builder-1"
+  data-show-title="{{ block.settings.show_title }}"
+  data-show-description="{{ block.settings.show_description }}"
+>
+  <div class="pc-builder-loading" role="status" aria-live="polite">
+    <span class="pc-builder-skeleton pc-builder-skeleton--title"></span>
+    <span class="pc-builder-skeleton pc-builder-skeleton--line"></span>
+    <span class="pc-builder-skeleton pc-builder-skeleton--line pc-builder-skeleton--short"></span>
+  </div>
+</div>
+
+<script src="{{ 'pc-builder.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "PC Builder",
+  "target": "section",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_title",
+      "label": "Show title",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_description",
+      "label": "Show description",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

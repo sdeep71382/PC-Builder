@@ -19,10 +19,12 @@ const { mockPrismaClient } = vi.hoisted(() => {
     const id = nextBuilderId();
     const builder: Builder = {
       id,
+      publicId: `pb_${id.replace(/[^a-z0-9]/g, "0").padEnd(32, "0").slice(0, 32)}`,
       shopId,
       name,
       description: null,
       status,
+      isDefault: false,
       version: 1,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -64,10 +66,23 @@ const { mockPrismaClient } = vi.hoisted(() => {
         builders[where.id] = updated;
         return updated;
       }),
-      count: vi.fn(({ where }: { where: { builderId: string; shopId: string; enabled: boolean } }) => {
-        return Object.values(steps).filter(
-          (s) => s.builderId === where.builderId && s.shopId === where.shopId && s.enabled === where.enabled
-        ).length;
+      count: vi.fn(({ where }: { where: { shopId: string; status?: string; isDefault?: boolean } }) => {
+        return Object.values(builders).filter((b) => {
+          if (b.shopId !== where.shopId) return false;
+          if (where.status && b.status !== where.status) return false;
+          if (where.isDefault !== undefined && b.isDefault !== where.isDefault) return false;
+          return true;
+        }).length;
+      }),
+      updateMany: vi.fn(({ where, data }: { where: { shopId: string; isDefault?: boolean }; data: Partial<Builder> }) => {
+        for (const [id, builder] of Object.entries(builders)) {
+          if (
+            builder.shopId === where.shopId &&
+            (where.isDefault === undefined || builder.isDefault === where.isDefault)
+          ) {
+            builders[id] = { ...builder, ...data, updatedAt: new Date() };
+          }
+        }
       }),
     },
     builderStep: {

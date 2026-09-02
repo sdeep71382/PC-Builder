@@ -4,10 +4,12 @@ export type CatalogReferenceType = "collection" | "product" | "variant";
 
 export interface Builder {
   id: string;
+  publicId: string | null;
   shopId: string;
   name: string;
   description: string | null;
   status: BuilderStatus;
+  isDefault: boolean;
   version: number;
   createdAt: Date;
   updatedAt: Date;
@@ -57,6 +59,11 @@ export interface ShopifyCollectionNode {
   id: string;
   title: string;
   handle: string;
+  image: {
+    url: string;
+    altText: string | null;
+  } | null;
+  productCount: number | null;
 }
 
 export interface ShopifyVariantNode {

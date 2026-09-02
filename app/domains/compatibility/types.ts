@@ -1,91 +1,69 @@
-export type CompatibilityTagRole = "standard" | "powerDraw" | "outputWattage";
-
-export interface CompatibilityTag {
-  id: string;
-  shopId: string;
-  stepId: string;
-  builderId: string;
-  name: string;
-  role: CompatibilityTagRole;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface TagValueAssignment {
-  id: string;
-  shopId: string;
-  tagId: string;
-  assignmentId: string;
-  value: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface CompatibilityTagWithValues extends CompatibilityTag {
-  values: TagValueAssignment[];
-}
-
-export type BuildSelections = Record<string, string>;
-
-export interface Build {
-  id: string;
-  shopId: string;
-  builderId: string;
-  token: string;
-  selections: BuildSelections;
-  startedAt: Date;
-  completedAt: Date | null;
-  addedToCartAt: Date | null;
-  convertedAt: Date | null;
-  lastActivityAt: Date;
-  expiresAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export type AiSuggestionSource = "gemini-byo" | "built-in";
-export type AiSuggestionStatus = "pending" | "approved" | "rejected";
-
-export interface AiTagSuggestion {
-  id: string;
-  shopId: string;
-  tagId: string;
-  assignmentId: string;
-  suggestedValue: string;
-  source: AiSuggestionSource;
-  status: AiSuggestionStatus;
-  createdAt: Date;
-  reviewedAt: Date | null;
-}
-
-export interface AiIntegration {
-  id: string;
-  shopId: string;
-  geminiApiKeyEncrypted: string | null;
-  builtInAiEntitled: boolean;
-  disclosureAcceptedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export interface CompatibilityValidationError {
   field: string;
   message: string;
 }
 
-export interface ExcludedOption {
-  assignmentId: string;
+export type CompatibilityRuleOperator =
+  | "EQUALS"
+  | "IN"
+  | "GREATER_THAN_OR_EQUAL"
+  | "LESS_THAN_OR_EQUAL";
+
+export type CompatibilityRuleSeverity = "error" | "warning";
+
+export interface CompatibilityRule {
+  id: string;
+  shopId: string;
+  builderId: string;
+  sourceCategory: string;
+  sourceField: string;
+  operator: CompatibilityRuleOperator;
+  targetCategory: string;
+  targetField: string;
+  comparisonValue: unknown;
+  severity: CompatibilityRuleSeverity;
+  enabled: boolean;
+  message: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type CompatibilityEvaluationStatus = "PASS" | "FAIL" | "UNKNOWN";
+
+export interface CompatibilitySelection {
+  category: string;
+  shopifyProductId: string;
+  shopifyVariantId: string;
+  specifications: Record<string, unknown>;
+}
+
+export interface CompatibilityViolation {
+  ruleId: string;
+  sourceCategory: string;
+  sourceField: string;
+  sourceValue: unknown;
+  targetCategory: string;
+  targetField: string;
+  targetValue: unknown;
+  operator: CompatibilityRuleOperator;
+  severity: CompatibilityRuleSeverity;
+  message: string;
+}
+
+export interface CompatibilityUnknown {
+  ruleId: string;
+  sourceCategory: string;
+  sourceField: string;
+  targetCategory: string;
+  targetField: string;
+  operator: CompatibilityRuleOperator;
   reason: string;
+  message: string;
 }
 
-export interface FilteredStepOptions {
-  available: string[];
-  outOfStock: string[];
-  excluded: ExcludedOption[];
-}
-
-export interface PowerBudgetResult {
-  runningDrawWatts: number;
-  headroomPercentage: number;
-  requiredWattage: number;
+export interface CompatibilityEvaluationResult {
+  status: CompatibilityEvaluationStatus;
+  compatible: boolean;
+  violations: CompatibilityViolation[];
+  unknowns: CompatibilityUnknown[];
 }

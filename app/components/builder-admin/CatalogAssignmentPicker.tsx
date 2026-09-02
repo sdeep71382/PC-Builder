@@ -3,14 +3,13 @@ import { useFetcher } from "react-router";
 import type {
   ShopifyCatalogResult,
   ShopifyCollectionNode,
-  ShopifyProductNode,
-  ShopifyVariantNode,
   StepCatalogAssignment,
 } from "../../domains/builder-admin/types";
 
 interface CatalogAssignmentPickerProps {
   assignments: StepCatalogAssignment[];
   builderId: string;
+  stepId: string;
   stepName: string;
   catalog: ShopifyCatalogResult;
   feedback?: {
@@ -23,9 +22,32 @@ function matchesSearch(title: string, search: string): boolean {
   return title.toLowerCase().includes(search.trim().toLowerCase());
 }
 
+function collectionProductCount(collection: ShopifyCollectionNode): string {
+  if (collection.productCount === null) {
+    return "Product count unavailable";
+  }
+
+  return `${collection.productCount} product${collection.productCount === 1 ? "" : "s"}`;
+}
+
+function CollectionImage({ collection }: { collection: ShopifyCollectionNode }) {
+  if (!collection.image?.url) {
+    return <div className="builder-collection-image builder-collection-image--empty" aria-hidden="true" />;
+  }
+
+  return (
+    <img
+      className="builder-collection-image"
+      src={collection.image.url}
+      alt={collection.image.altText ?? ""}
+    />
+  );
+}
+
 export function CatalogAssignmentPicker({
   assignments,
   builderId,
+  stepId,
   stepName,
   catalog,
   feedback,
@@ -33,8 +55,6 @@ export function CatalogAssignmentPicker({
   const assignFetcher = useFetcher();
   const removeFetcher = useFetcher();
   const [collectionSearch, setCollectionSearch] = useState("");
-  const [productSearch, setProductSearch] = useState("");
-  const [variantSearch, setVariantSearch] = useState("");
 
   const isAssigning =
     ["loading", "submitting"].includes(assignFetcher.state) &&
@@ -43,75 +63,50 @@ export function CatalogAssignmentPicker({
     ["loading", "submitting"].includes(removeFetcher.state) &&
     removeFetcher.formMethod === "POST";
 
-  const assignedCollectionIds = useMemo(
-    () =>
-      new Set(
-        assignments
-          .filter((assignment) => assignment.referenceType === "collection")
-          .map((assignment) => assignment.shopifyCollectionId)
-      ),
-    [assignments]
+  const collectionAssignment = assignments.find(
+    (assignment) => assignment.referenceType === "collection"
   );
-  const assignedProductIds = useMemo(
-    () =>
-      new Set(
-        assignments
-          .filter((assignment) => assignment.referenceType === "product")
-          .map((assignment) => assignment.shopifyProductId)
-      ),
-    [assignments]
-  );
-  const assignedVariantIds = useMemo(
-    () =>
-      new Set(
-        assignments
-          .filter((assignment) => assignment.referenceType === "variant")
-          .map((assignment) => assignment.shopifyVariantId)
-      ),
-    [assignments]
-  );
+  const assignedCollectionId = collectionAssignment?.shopifyCollectionId ?? null;
+
+  const collectionById = useMemo(() => {
+    const map = new Map<string, ShopifyCollectionNode>();
+    if (catalog.type === "success") {
+      for (const collection of catalog.collections) {
+        map.set(collection.id, collection);
+      }
+    }
+    return map;
+  }, [catalog]);
+
+  const assignedCollection =
+    assignedCollectionId && catalog.type === "success"
+      ? collectionById.get(assignedCollectionId) ?? null
+      : null;
 
   const filteredCollections: ShopifyCollectionNode[] =
     catalog.type === "success"
-      ? catalog.collections.filter(
-          (collection) =>
-            !assignedCollectionIds.has(collection.id) &&
-            matchesSearch(collection.title, collectionSearch)
-        )
-      : [];
-  const filteredProducts: ShopifyProductNode[] =
-    catalog.type === "success"
-      ? catalog.products.filter(
-          (product) =>
-            !assignedProductIds.has(product.id) &&
-            matchesSearch(product.title, productSearch)
-        )
-      : [];
-  const filteredVariants: ShopifyVariantNode[] =
-    catalog.type === "success"
-      ? catalog.variants.filter(
-          (variant) =>
-            !assignedVariantIds.has(variant.id) &&
-            (matchesSearch(variant.title, variantSearch) ||
-              matchesSearch(variant.product.title, variantSearch))
+      ? catalog.collections.filter((collection) =>
+          matchesSearch(collection.title, collectionSearch)
         )
       : [];
 
   return (
-    <s-page heading="Configure collections">
+    <s-page heading="Configure collection">
       <div className="builder-admin">
         <div className="builder-admin__header">
           <div>
             <p className="builder-admin__eyebrow">Catalog assignment</p>
             <h1 className="builder-admin__title">{stepName}</h1>
             <p className="builder-admin__subtitle">
-              Choose the Shopify collection customers should browse during this step.
-              Collections keep this setup easy for merchants: update the collection in
-              Shopify and the builder follows the same catalog source.
+              Assign one Shopify collection to this step. The storefront will later
+              load real Shopify products and variants from that collection.
             </p>
           </div>
           <div className="builder-admin__actions">
             <s-button href={`/app/builders/${builderId}/steps`}>Back to steps</s-button>
+            <s-button href={`/app/specifications?builderId=${builderId}&stepId=${stepId}`}>
+              Product specifications
+            </s-button>
           </div>
         </div>
 
@@ -124,44 +119,46 @@ export function CatalogAssignmentPicker({
         )}
 
         <div className="builder-card">
-          <h2 className="builder-card__title">Assigned items</h2>
-          <p className="builder-card__text">
-            Assigned collections define the customer choices for this step. Product and
-            variant assignments are still supported for precise exceptions.
-          </p>
+          <h2 className="builder-card__title">Current collection</h2>
 
-          {assignments.length === 0 ? (
-            <p className="builder-card__text" style={{ marginTop: "12px" }}>
-              No collection assigned yet.
-            </p>
-          ) : (
-            <div className="builder-catalog-list">
-              {assignments.map((assignment) => (
-                <div className="builder-catalog-item" key={assignment.id}>
-                  <div>
-                    <strong>
-                      {assignment.referenceType === "collection"
-                        ? "Collection"
-                        : assignment.referenceType === "product"
-                          ? "Product"
-                          : "Variant"}
-                    </strong>
-                    <div className="builder-list__meta">
-                      {assignment.referenceType === "collection"
-                        ? assignment.shopifyCollectionId
-                        : assignment.referenceType === "product"
-                        ? assignment.shopifyProductId
-                        : assignment.shopifyVariantId}
-                    </div>
-                  </div>
-                  <removeFetcher.Form method="post">
-                    <input type="hidden" name="assignmentId" value={assignment.id} />
-                    <s-button variant="secondary" type="submit" disabled={isRemoving}>
-                      Remove
-                    </s-button>
-                  </removeFetcher.Form>
+          {!collectionAssignment ? (
+            <div className="builder-empty-state">
+              <strong>No collection assigned</strong>
+              <p className="builder-card__text">
+                Choose a Shopify collection below so customers have catalog items
+                to select for this step.
+              </p>
+            </div>
+          ) : assignedCollection ? (
+            <div className="builder-assigned-collection">
+              <CollectionImage collection={assignedCollection} />
+              <div>
+                <strong>{assignedCollection.title}</strong>
+                <div className="builder-list__meta">
+                  /{assignedCollection.handle} / {collectionProductCount(assignedCollection)}
                 </div>
-              ))}
+              </div>
+              <removeFetcher.Form method="post">
+                <input type="hidden" name="assignmentId" value={collectionAssignment.id} />
+                <s-button variant="secondary" type="submit" disabled={isRemoving}>
+                  Remove
+                </s-button>
+              </removeFetcher.Form>
+            </div>
+          ) : (
+            <div className="builder-empty-state builder-empty-state--warning">
+              <strong>Assigned collection is unavailable</strong>
+              <p className="builder-card__text">
+                The saved collection could not be loaded from Shopify. It may have
+                been deleted or may no longer be accessible to this app.
+              </p>
+              <div className="builder-list__meta">{assignedCollectionId}</div>
+              <removeFetcher.Form method="post" style={{ marginTop: "12px" }}>
+                <input type="hidden" name="assignmentId" value={collectionAssignment.id} />
+                <s-button variant="secondary" type="submit" disabled={isRemoving}>
+                  Remove unavailable collection
+                </s-button>
+              </removeFetcher.Form>
             </div>
           )}
         </div>
@@ -169,122 +166,58 @@ export function CatalogAssignmentPicker({
         {catalog.type === "failure" ? (
           <div className="builder-card">
             <s-banner tone="critical">
-              Unable to load the Shopify catalog: {catalog.message}
+              Unable to load Shopify collections: {catalog.message}
             </s-banner>
           </div>
         ) : (
-          <>
-            <div className="builder-card">
-              <h2 className="builder-card__title">Assign collections</h2>
-              <p className="builder-card__text">
-                Pick one or more Shopify collections for this step. This is the normal
-                setup path for a PC builder because collections can be maintained in
-                Shopify without editing the builder every time a product changes.
-              </p>
-              <input
-                className="builder-search"
-                type="text"
-                aria-label="Search collections by title"
-                placeholder="Search collections by title"
-                value={collectionSearch}
-                onChange={(event) => setCollectionSearch(event.target.value)}
-              />
-              {filteredCollections.length === 0 ? (
-                <p className="builder-card__text">No matching collections available.</p>
-              ) : (
-                <div className="builder-catalog-list">
-                  {filteredCollections.slice(0, 20).map((collection) => (
-                    <div className="builder-catalog-item" key={collection.id}>
+          <div className="builder-card">
+            <h2 className="builder-card__title">
+              {collectionAssignment ? "Replace collection" : "Choose collection"}
+            </h2>
+            <p className="builder-card__text">
+              Collection IDs are validated on the server against the authenticated
+              Shopify store before they are saved.
+            </p>
+            <input
+              className="builder-search"
+              type="text"
+              aria-label="Search collections by title"
+              placeholder="Search collections by title"
+              value={collectionSearch}
+              onChange={(event) => setCollectionSearch(event.target.value)}
+            />
+            {filteredCollections.length === 0 ? (
+              <p className="builder-card__text">No matching collections available.</p>
+            ) : (
+              <div className="builder-catalog-list">
+                {filteredCollections.slice(0, 50).map((collection) => {
+                  const isAssigned = collection.id === assignedCollectionId;
+                  return (
+                    <div className="builder-catalog-item builder-catalog-item--media" key={collection.id}>
+                      <CollectionImage collection={collection} />
                       <div>
                         <strong>{collection.title}</strong>
-                        <div className="builder-list__meta">/{collection.handle}</div>
+                        <div className="builder-list__meta">
+                          /{collection.handle} / {collectionProductCount(collection)}
+                        </div>
                       </div>
                       <assignFetcher.Form method="post">
                         <input type="hidden" name="referenceType" value="collection" />
                         <input type="hidden" name="shopifyCollectionId" value={collection.id} />
-                        <s-button variant="primary" type="submit" disabled={isAssigning}>
-                          Assign
+                        <s-button
+                          variant={isAssigned ? "secondary" : "primary"}
+                          type="submit"
+                          disabled={isAssigning || isAssigned}
+                        >
+                          {isAssigned ? "Assigned" : collectionAssignment ? "Replace" : "Assign"}
                         </s-button>
                       </assignFetcher.Form>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="builder-catalog-grid builder-catalog-grid--secondary">
-              <div className="builder-card">
-                <h2 className="builder-card__title">Optional product assignment</h2>
-                <p className="builder-card__text">
-                  Use this only when a single product should be available outside a
-                  collection.
-                </p>
-                <input
-                  className="builder-search"
-                  type="text"
-                  aria-label="Search products by title"
-                  placeholder="Search products by title"
-                  value={productSearch}
-                  onChange={(event) => setProductSearch(event.target.value)}
-                />
-                {filteredProducts.length === 0 ? (
-                  <p className="builder-card__text">No matching products available.</p>
-                ) : (
-                  <div className="builder-catalog-list">
-                    {filteredProducts.slice(0, 20).map((product) => (
-                      <div className="builder-catalog-item" key={product.id}>
-                        <strong>{product.title}</strong>
-                        <assignFetcher.Form method="post">
-                          <input type="hidden" name="referenceType" value="product" />
-                          <input type="hidden" name="shopifyProductId" value={product.id} />
-                          <s-button variant="secondary" type="submit" disabled={isAssigning}>
-                            Assign
-                          </s-button>
-                        </assignFetcher.Form>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  );
+                })}
               </div>
-
-            <div className="builder-card">
-              <h2 className="builder-card__title">Optional variant assignment</h2>
-              <p className="builder-card__text">
-                Use this only when a specific variant should be available outside a
-                collection.
-              </p>
-              <input
-                className="builder-search"
-                type="text"
-                aria-label="Search variants by title"
-                placeholder="Search variants by title"
-                value={variantSearch}
-                onChange={(event) => setVariantSearch(event.target.value)}
-              />
-              {filteredVariants.length === 0 ? (
-                <p className="builder-card__text">No matching variants available.</p>
-              ) : (
-                <div className="builder-catalog-list">
-                  {filteredVariants.slice(0, 20).map((variant) => (
-                    <div className="builder-catalog-item" key={variant.id}>
-                      <div>
-                        <strong>{variant.product.title}</strong>
-                        <div className="builder-list__meta">{variant.title}</div>
-                      </div>
-                      <assignFetcher.Form method="post">
-                        <input type="hidden" name="referenceType" value="variant" />
-                        <input type="hidden" name="shopifyVariantId" value={variant.id} />
-                        <s-button variant="secondary" type="submit" disabled={isAssigning}>
-                          Assign
-                        </s-button>
-                      </assignFetcher.Form>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            </div>
-          </>
+            )}
+          </div>
         )}
       </div>
     </s-page>

@@ -79,7 +79,15 @@ describe("Shopify catalog lookups", () => {
       .mockResolvedValueOnce({
         json: async () => ({
           collections: {
-            nodes: [{ id: "gid://shopify/Collection/1", title: "Processors", handle: "processors" }],
+            nodes: [
+              {
+                id: "gid://shopify/Collection/1",
+                title: "Processors",
+                handle: "processors",
+                image: { url: "https://example.com/processor.png", altText: "Processors" },
+                productsCount: { count: 8 },
+              },
+            ],
           },
         }),
       })
@@ -103,7 +111,15 @@ describe("Shopify catalog lookups", () => {
     const result = await lookupShopifyCatalog(admin);
     expect(result).toEqual({
       type: "success",
-      collections: [{ id: "gid://shopify/Collection/1", title: "Processors", handle: "processors" }],
+      collections: [
+        {
+          id: "gid://shopify/Collection/1",
+          title: "Processors",
+          handle: "processors",
+          image: { url: "https://example.com/processor.png", altText: "Processors" },
+          productCount: 8,
+        },
+      ],
       products: [{ id: "gid://shopify/Product/1", title: "Widget" }],
       variants: [
         {

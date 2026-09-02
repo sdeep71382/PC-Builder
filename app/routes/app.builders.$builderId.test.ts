@@ -9,12 +9,17 @@ vi.mock("../shopify.server", () => ({
 
 vi.mock("../domains/builder-admin/builder.server", () => ({
   getBuilderWithSteps: vi.fn(),
+  makeBuilderDefault: vi.fn(),
   updateBuilder: vi.fn(),
   updateBuilderStatus: vi.fn(),
 }));
 
 import { authenticate } from "../shopify.server";
-import { getBuilderWithSteps, updateBuilder } from "../domains/builder-admin/builder.server";
+import {
+  getBuilderWithSteps,
+  makeBuilderDefault,
+  updateBuilder,
+} from "../domains/builder-admin/builder.server";
 
 describe("app.builders.$builderId route", () => {
   beforeEach(() => {
@@ -72,5 +77,29 @@ describe("app.builders.$builderId route", () => {
     expect(response.status).toBe(400);
     const data = await response.json();
     expect(data.feedback.type).toBe("stale");
+  });
+
+  it("sets a published builder as the default for the authenticated shop", async () => {
+    (authenticate.admin as any).mockResolvedValue({ session: { shop: "shop-1" } });
+    (makeBuilderDefault as any).mockResolvedValue({
+      id: "builder-1",
+      status: "published",
+      isDefault: true,
+      version: 2,
+    });
+
+    const formData = new FormData();
+    formData.set("statusAction", "makeDefault");
+    formData.set("version", "1");
+    const request = new Request("http://localhost/app/builders/builder-1", {
+      method: "POST",
+      body: formData,
+    });
+
+    const response = await builderEditAction({ request, params: { builderId: "builder-1" } } as any);
+    const data = await response.json();
+
+    expect(makeBuilderDefault).toHaveBeenCalledWith("shop-1", "builder-1", 1);
+    expect(data.feedback.message).toBe("Default storefront builder updated.");
   });
 });

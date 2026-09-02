@@ -37,23 +37,22 @@ const builders = [
 
 async function deleteExistingBuilderData(shopId) {
   await prisma.$transaction([
-    prisma.aiTagSuggestion.deleteMany({ where: { shopId } }),
-    prisma.tagValueAssignment.deleteMany({ where: { shopId } }),
-    prisma.compatibilityTag.deleteMany({ where: { shopId } }),
+    prisma.productSpecification.deleteMany({ where: { shopId } }),
+    prisma.compatibilityRule.deleteMany({ where: { shopId } }),
     prisma.stepCatalogAssignment.deleteMany({ where: { shopId } }),
-    prisma.build.deleteMany({ where: { shopId } }),
     prisma.builderStep.deleteMany({ where: { shopId } }),
     prisma.builder.deleteMany({ where: { shopId } }),
   ]);
 }
 
-async function createBuilderWithSteps(shopId, builderInput) {
+async function createBuilderWithSteps(shopId, builderInput, isDefault) {
   const builder = await prisma.builder.create({
     data: {
       shopId,
       name: builderInput.name,
       description: builderInput.description,
       status: builderInput.status,
+      isDefault,
       builderSteps: {
         create: builderInput.steps.map((name, index) => ({
           shopId,
@@ -78,8 +77,9 @@ async function main() {
   await deleteExistingBuilderData(SHOP_ID);
 
   const created = [];
-  for (const builder of builders) {
-    created.push(await createBuilderWithSteps(SHOP_ID, builder));
+  for (const [index, builder] of builders.entries()) {
+    const createdBuilder = await createBuilderWithSteps(SHOP_ID, builder, index === 0);
+    created.push(createdBuilder);
   }
 
   console.log(`Seeded ${created.length} builders for ${SHOP_ID}:`);

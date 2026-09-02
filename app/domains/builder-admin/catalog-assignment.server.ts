@@ -23,6 +23,13 @@ export async function lookupShopifyCatalog(
             id
             title
             handle
+            image {
+              url
+              altText
+            }
+            productsCount {
+              count
+            }
           }
         }
       }
@@ -54,21 +61,26 @@ export async function lookupShopifyCatalog(
       }
     `);
 
-    const collectionsData = (await collections.json()) as {
+    const collectionsJson = (await collections.json()) as {
+      data?: { collections: { nodes: ShopifyCollectionNode[] } };
       collections: { nodes: ShopifyCollectionNode[] };
     };
-    const productsData = (await products.json()) as {
+    const productsJson = (await products.json()) as {
+      data?: { products: { nodes: ShopifyProductNode[] } };
       products: { nodes: ShopifyProductNode[] };
     };
-    const variantsData = (await variants.json()) as {
+    const variantsJson = (await variants.json()) as {
+      data?: { productVariants: { nodes: ShopifyVariantNode[] } };
       productVariants: { nodes: ShopifyVariantNode[] };
     };
 
+    const collectionNodes = (collectionsJson.data?.collections ?? collectionsJson.collections).nodes.map(normalizeCollectionNode);
+
     return {
       type: "success",
-      collections: collectionsData.collections.nodes,
-      products: productsData.products.nodes,
-      variants: variantsData.productVariants.nodes,
+      collections: collectionNodes,
+      products: (productsJson.data?.products ?? productsJson.products).nodes,
+      variants: (variantsJson.data?.productVariants ?? variantsJson.productVariants).nodes,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : CATALOG_UNAVAILABLE_MESSAGE;
@@ -88,18 +100,46 @@ export async function findShopifyCollection(
             id
             title
             handle
+            image {
+              url
+              altText
+            }
+            productsCount {
+              count
+            }
           }
         }
       `,
       { variables: { id: shopifyCollectionId } }
     );
 
-    const data = (await result.json()) as { collection: ShopifyCollectionNode | null };
-    return { type: "success", collection: data.collection ?? null };
+    const json = (await result.json()) as {
+      data?: { collection: (ShopifyCollectionNode & { productsCount?: { count?: number } | number }) | null };
+      collection?: (ShopifyCollectionNode & { productsCount?: { count?: number } | number }) | null;
+    };
+    const collection = json.data?.collection ?? json.collection ?? null;
+    return { type: "success", collection: collection ? normalizeCollectionNode(collection) : null };
   } catch (error) {
     const message = error instanceof Error ? error.message : CATALOG_UNAVAILABLE_MESSAGE;
     return { type: "failure", message: message || CATALOG_UNAVAILABLE_MESSAGE };
   }
+}
+
+function normalizeCollectionNode(
+  collection: ShopifyCollectionNode & { productsCount?: { count?: number } | number }
+): ShopifyCollectionNode {
+  const productCount =
+    typeof collection.productsCount === "number"
+      ? collection.productsCount
+      : collection.productsCount?.count ?? collection.productCount ?? null;
+
+  return {
+    id: collection.id,
+    title: collection.title,
+    handle: collection.handle,
+    image: collection.image ?? null,
+    productCount,
+  };
 }
 
 export async function findShopifyProduct(
@@ -119,8 +159,11 @@ export async function findShopifyProduct(
       { variables: { id: shopifyProductId } }
     );
 
-    const data = (await result.json()) as { product: ShopifyProductNode | null };
-    return { type: "success", product: data.product ?? null };
+    const json = (await result.json()) as {
+      data?: { product: ShopifyProductNode | null };
+      product?: ShopifyProductNode | null;
+    };
+    return { type: "success", product: json.data?.product ?? json.product ?? null };
   } catch (error) {
     const message = error instanceof Error ? error.message : CATALOG_UNAVAILABLE_MESSAGE;
     return { type: "failure", message: message || CATALOG_UNAVAILABLE_MESSAGE };
@@ -148,8 +191,11 @@ export async function findShopifyVariant(
       { variables: { id: shopifyVariantId } }
     );
 
-    const data = (await result.json()) as { productVariant: ShopifyVariantNode | null };
-    return { type: "success", variant: data.productVariant ?? null };
+    const json = (await result.json()) as {
+      data?: { productVariant: ShopifyVariantNode | null };
+      productVariant?: ShopifyVariantNode | null;
+    };
+    return { type: "success", variant: json.data?.productVariant ?? json.productVariant ?? null };
   } catch (error) {
     const message = error instanceof Error ? error.message : CATALOG_UNAVAILABLE_MESSAGE;
     return { type: "failure", message: message || CATALOG_UNAVAILABLE_MESSAGE };

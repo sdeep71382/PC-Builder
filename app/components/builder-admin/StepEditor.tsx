@@ -1,5 +1,5 @@
 import type { BuilderStep } from "../../domains/builder-admin/types";
-import { useFetcher } from "react-router";
+import { Link, useFetcher } from "react-router";
 
 interface StepEditorProps {
   steps: BuilderStep[];
@@ -103,9 +103,12 @@ export function StepEditor({ steps, builderId, feedback }: StepEditorProps) {
                         {step.enabled ? "Enabled" : "Disabled"} / {step.required ? "Required" : "Optional"}
                       </p>
                     </div>
-                    <s-button variant="primary" href={`/app/builders/${builderId}/steps/${step.id}/catalog`}>
+                    <Link
+                      className="builder-button-link builder-button-link--primary"
+                      to={`/app/builders/${builderId}/steps/${step.id}/catalog`}
+                    >
                       Configure collections
-                    </s-button>
+                    </Link>
                   </div>
 
                   <fetcher.Form method="post" className="builder-form">

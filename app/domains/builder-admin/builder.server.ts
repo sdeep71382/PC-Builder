@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import type {
   Builder,
   BuilderStep,
@@ -21,6 +22,7 @@ import {
 
 const prisma = new PrismaClient();
 
+
 export const DEFAULT_PC_BUILDER_STEPS = [
   "Processor",
   "Motherboard",
@@ -39,6 +41,8 @@ export async function listBuilders(shopId: string): Promise<Builder[]> {
   return builders.map((builder) => ({
     ...builder,
     status: builder.status as BuilderStatus,
+    publicId: builder.publicId,
+    isDefault: builder.isDefault,
   }));
 }
 
@@ -56,6 +60,8 @@ export async function getBuilder(
 
   return {
     ...builder,
+    publicId: builder.publicId,
+    isDefault: builder.isDefault,
     status: builder.status as BuilderStatus,
   };
 }
@@ -79,10 +85,12 @@ export async function getBuilderWithSteps(
 
   return {
     id: builder.id,
+    publicId: builder.publicId,
     shopId: builder.shopId,
     name: builder.name,
     description: builder.description,
     status: builder.status as BuilderStatus,
+    isDefault: builder.isDefault,
     version: builder.version,
     createdAt: builder.createdAt,
     updatedAt: builder.updatedAt,
@@ -112,6 +120,7 @@ export async function createBuilder(
 
   const builder = await prisma.builder.create({
     data: {
+      publicId: generateBuilderPublicId(),
       shopId,
       name: data.name.trim(),
       description: data.description?.trim(),
@@ -206,10 +215,68 @@ export async function updateBuilderStatus(
     }
   }
 
+  const shouldBecomeDefault =
+    nextStatus === "published" &&
+    !existing.isDefault &&
+    (await prisma.builder.count({
+      where: { shopId, status: "published", isDefault: true },
+    })) === 0;
+
+  if (shouldBecomeDefault) {
+    await prisma.builder.updateMany({
+      where: { shopId, isDefault: true },
+      data: { isDefault: false },
+    });
+  }
+
   const builder = await prisma.builder.update({
     where: { id: builderId },
-    data: { status: nextStatus, version: existing.version + 1 },
+    data: {
+      status: nextStatus,
+      version: existing.version + 1,
+      publicId: existing.publicId ?? generateBuilderPublicId(),
+      isDefault: existing.isDefault || shouldBecomeDefault,
+    },
   });
+  return { ...builder, status: builder.status as BuilderStatus };
+}
+
+export async function makeBuilderDefault(
+  shopId: string,
+  builderId: string,
+  version: number
+): Promise<Builder> {
+  const existing = await prisma.builder.findFirst({
+    where: { id: builderId, shopId },
+  });
+
+  if (!existing) {
+    throw new Error("Builder not found.");
+  }
+
+  if (isStaleSave(version, existing.version)) {
+    throw new Error("Stale save. Please refresh and try again.");
+  }
+
+  if (existing.status !== "published") {
+    throw new Error("Only published builders can be set as default.");
+  }
+
+  const [, builder] = await prisma.$transaction([
+    prisma.builder.updateMany({
+      where: { shopId, isDefault: true },
+      data: { isDefault: false },
+    }),
+    prisma.builder.update({
+      where: { id: builderId },
+      data: {
+        isDefault: true,
+        version: existing.version + 1,
+        publicId: existing.publicId ?? generateBuilderPublicId(),
+      },
+    }),
+  ]);
+
   return { ...builder, status: builder.status as BuilderStatus };
 }
 
@@ -271,6 +338,7 @@ export async function createDefaultPcBuilderSteps(
 
 export async function updateStep(
   shopId: string,
+  builderId: string,
   stepId: string,
   data: {
     name?: string;
@@ -281,7 +349,7 @@ export async function updateStep(
   }
 ): Promise<BuilderStep> {
   const existing = await prisma.builderStep.findFirst({
-    where: { id: stepId, shopId },
+    where: { id: stepId, builderId, shopId },
   });
 
   if (!existing) {
@@ -332,10 +400,11 @@ export async function updateStep(
 
 export async function deleteStep(
   shopId: string,
+  builderId: string,
   stepId: string
 ): Promise<void> {
   const existing = await prisma.builderStep.findFirst({
-    where: { id: stepId, shopId },
+    where: { id: stepId, builderId, shopId },
   });
 
   if (!existing) {
@@ -351,23 +420,11 @@ export async function deleteStep(
   });
 
   const remainingSteps = await prisma.builderStep.findMany({
-    where: { builderId: existing.builderId, shopId },
+    where: { builderId, shopId },
     orderBy: { position: "asc" },
   });
 
-  const normalized = remainingSteps.map((step, index) => ({
-    ...step,
-    position: index + 1,
-  }));
-
-  await prisma.$transaction(
-    normalized.map((step) =>
-      prisma.builderStep.update({
-        where: { id: step.id },
-        data: { position: step.position },
-      })
-    )
-  );
+  await updateStepPositions(remainingSteps.map((step) => step.id));
 }
 
 export async function reorderSteps(
@@ -398,24 +455,31 @@ export async function reorderSteps(
     ordered.push(step);
   }
 
-  const normalized = ordered.map((step, index) => ({
-    ...step,
-    position: index + 1,
-  }));
-
-  await prisma.$transaction(
-    normalized.map((step, index) =>
-      prisma.builderStep.update({
-        where: { id: step.id },
-        data: { position: index + 1 },
-      })
-    )
-  );
+  await updateStepPositions(ordered.map((step) => step.id));
 
   return prisma.builderStep.findMany({
     where: { builderId, shopId },
     orderBy: { position: "asc" },
   });
+}
+
+async function updateStepPositions(stepIds: string[]): Promise<void> {
+  const temporaryOffset = stepIds.length + 1000;
+
+  await prisma.$transaction([
+    ...stepIds.map((stepId, index) =>
+      prisma.builderStep.update({
+        where: { id: stepId },
+        data: { position: temporaryOffset + index + 1 },
+      })
+    ),
+    ...stepIds.map((stepId, index) =>
+      prisma.builderStep.update({
+        where: { id: stepId },
+        data: { position: index + 1 },
+      })
+    ),
+  ]);
 }
 
 export async function getStepsForBuilder(
@@ -449,7 +513,7 @@ export async function createCatalogAssignment(
   }
 
   const step = await prisma.builderStep.findFirst({
-    where: { id: data.stepId, shopId },
+    where: { id: data.stepId, builderId: data.builderId, shopId },
   });
 
   if (!step) {
@@ -473,6 +537,60 @@ export async function createCatalogAssignment(
       position: data.position,
     },
   });
+  return { ...assignment, referenceType: assignment.referenceType as CatalogReferenceType };
+}
+
+export async function replaceStepCollectionAssignment(
+  shopId: string,
+  data: {
+    builderId: string;
+    stepId: string;
+    shopifyCollectionId: string;
+  }
+): Promise<StepCatalogAssignment> {
+  const builder = await prisma.builder.findFirst({
+    where: { id: data.builderId, shopId },
+  });
+
+  if (!builder) {
+    throw new Error("Builder not found.");
+  }
+
+  const step = await prisma.builderStep.findFirst({
+    where: { id: data.stepId, builderId: data.builderId, shopId },
+  });
+
+  if (!step) {
+    throw new Error("Step not found.");
+  }
+
+  const inputError = validateCatalogAssignmentInput({
+    ...data,
+    referenceType: "collection",
+  });
+  if (inputError) {
+    throw new Error(inputError.message);
+  }
+
+  const [, assignment] = await prisma.$transaction([
+    prisma.stepCatalogAssignment.deleteMany({
+      where: {
+        stepId: data.stepId,
+        shopId,
+        referenceType: "collection",
+      },
+    }),
+    prisma.stepCatalogAssignment.create({
+      data: {
+        shopId,
+        builderId: data.builderId,
+        stepId: data.stepId,
+        referenceType: "collection",
+        shopifyCollectionId: data.shopifyCollectionId,
+      },
+    }),
+  ]);
+
   return { ...assignment, referenceType: assignment.referenceType as CatalogReferenceType };
 }
 
@@ -505,4 +623,8 @@ export async function getCatalogAssignmentsForStep(
     ...assignment,
     referenceType: assignment.referenceType as CatalogReferenceType,
   }));
+}
+
+function generateBuilderPublicId(): string {
+  return `pb_${randomUUID().replace(/-/g, "")}`;
 }

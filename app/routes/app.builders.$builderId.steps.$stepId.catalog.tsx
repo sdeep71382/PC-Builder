@@ -2,15 +2,13 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { redirect, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
-  createCatalogAssignment,
   removeCatalogAssignment,
   getCatalogAssignmentsForStep,
   getStepsForBuilder,
+  replaceStepCollectionAssignment,
 } from "../domains/builder-admin/builder.server";
 import {
   findShopifyCollection,
-  findShopifyProduct,
-  findShopifyVariant,
   lookupShopifyCatalog,
 } from "../domains/builder-admin/catalog-assignment.server";
 import { CatalogAssignmentPicker } from "../components/builder-admin/CatalogAssignmentPicker";
@@ -33,13 +31,17 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   if (!builderId || !stepId) {
     throw new Response("Not Found", { status: 404 });
   }
-  const [assignments, catalog, steps] = await Promise.all([
-    getCatalogAssignmentsForStep(session.shop, stepId),
-    lookupShopifyCatalog(admin),
-    getStepsForBuilder(session.shop, builderId),
-  ]);
+  const steps = await getStepsForBuilder(session.shop, builderId);
   const step = steps.find((candidate) => candidate.id === stepId);
-  return { builderId, stepId, stepName: step?.name ?? "Step", assignments, catalog };
+  if (!step) {
+    throw new Response("Not Found", { status: 404 });
+  }
+
+  const [assignments, catalog] = await Promise.all([
+    getCatalogAssignmentsForStep(session.shop, step.id),
+    lookupShopifyCatalog(admin),
+  ]);
+  return { builderId, stepId, stepName: step.name, assignments, catalog };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -56,12 +58,28 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const assignmentId = formData.get("assignmentId");
   const referenceType = formData.get("referenceType");
   const shopifyCollectionId = formString(formData.get("shopifyCollectionId"));
-  const shopifyProductId = formString(formData.get("shopifyProductId"));
-  const shopifyVariantId = formString(formData.get("shopifyVariantId"));
+
+  const steps = await getStepsForBuilder(session.shop, builderId);
+  const step = steps.find((candidate) => candidate.id === stepId);
+  if (!step) {
+    return Response.json(
+      { feedback: { type: "authorization", message: "Step not found for this builder." } },
+      { status: 404 },
+    );
+  }
 
   if (assignmentId) {
+    const stepAssignments = await getCatalogAssignmentsForStep(session.shop, step.id);
+    const assignment = stepAssignments.find((candidate) => candidate.id === assignmentId);
+    if (!assignment) {
+      return Response.json(
+        { feedback: { type: "authorization", message: "Assignment not found for this step." } },
+        { status: 404 },
+      );
+    }
+
     try {
-      await removeCatalogAssignment(session.shop, assignmentId as string);
+      await removeCatalogAssignment(session.shop, assignment.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to remove assignment.";
       return Response.json({ feedback: { type: "authorization", message } }, { status: 400 });
@@ -85,52 +103,17 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         { status: 400 },
       );
     }
-  } else if (referenceType === "product" && shopifyProductId) {
-    const lookup = await findShopifyProduct(admin, shopifyProductId);
-    if (lookup.type === "failure") {
-      return Response.json({ feedback: { type: "temporary", message: lookup.message } }, { status: 503 });
-    }
-    if (!lookup.product) {
-      return Response.json(
-        {
-          feedback: {
-            type: "validation",
-            message: "The selected product is missing, invalid, or not available to this shop.",
-          },
-        },
-        { status: 400 },
-      );
-    }
-  } else if (referenceType === "variant" && shopifyVariantId) {
-    const lookup = await findShopifyVariant(admin, shopifyVariantId);
-    if (lookup.type === "failure") {
-      return Response.json({ feedback: { type: "temporary", message: lookup.message } }, { status: 503 });
-    }
-    if (!lookup.variant) {
-      return Response.json(
-        {
-          feedback: {
-            type: "validation",
-            message: "The selected variant is missing, invalid, or not available to this shop.",
-          },
-        },
-        { status: 400 },
-      );
-    }
   }
 
-  if (referenceType && (shopifyCollectionId || shopifyProductId || shopifyVariantId)) {
+  if (referenceType === "collection" && shopifyCollectionId) {
     try {
-      await createCatalogAssignment(session.shop, {
+      await replaceStepCollectionAssignment(session.shop, {
         builderId,
         stepId,
-        referenceType: referenceType as "collection" | "product" | "variant",
         shopifyCollectionId,
-        shopifyProductId,
-        shopifyVariantId,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create assignment.";
+      const message = error instanceof Error ? error.message : "Failed to assign collection.";
       const type = message.includes("not found") ? "authorization" : "validation";
       return Response.json({ feedback: { type, message } }, { status: 400 });
     }
@@ -138,18 +121,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   return Response.json(
-    { feedback: { type: "validation", message: "Invalid catalog assignment input." } },
+    { feedback: { type: "validation", message: "Only Shopify collection assignments are supported for this step." } },
     { status: 400 },
   );
 };
 
 export default function StepCatalog() {
-  const { assignments, builderId, stepName, catalog } = useLoaderData<typeof loader>();
+  const { assignments, builderId, stepId, stepName, catalog } = useLoaderData<typeof loader>();
   const actionData = useActionData<ActionData>();
   return (
     <CatalogAssignmentPicker
       assignments={assignments}
       builderId={builderId}
+      stepId={stepId}
       stepName={stepName}
       catalog={catalog}
       feedback={actionData?.feedback ?? null}
