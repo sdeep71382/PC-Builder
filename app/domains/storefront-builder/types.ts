@@ -45,6 +45,8 @@ export interface StorefrontProductOptionDto {
     currencyCode: string;
   };
   available: boolean;
+  purchasable: boolean;
+  unavailableReason: "PRODUCT_INACTIVE" | "NOT_PUBLISHED" | "VARIANT_UNAVAILABLE" | "VARIANT_NOT_FOUND" | "UNKNOWN" | null;
   specifications: Record<string, unknown>;
 }
 
@@ -71,7 +73,7 @@ export interface StorefrontBuildState {
 }
 
 export interface StorefrontValidationError {
-  type: "MISSING_REQUIRED_STEP" | "INVALID_VARIANT" | "OUT_OF_STOCK" | "NOT_IN_STEP_CATALOG" | "INCOMPATIBLE" | "UNKNOWN";
+  type: "MISSING_REQUIRED_STEP" | "INVALID_VARIANT" | "OUT_OF_STOCK" | "NOT_IN_STEP_CATALOG" | "INCOMPATIBLE" | "UNKNOWN" | "PRODUCT_INACTIVE" | "NOT_PUBLISHED" | "VARIANT_UNAVAILABLE" | "VARIANT_NOT_FOUND";
   stepKey?: string;
   variantId?: string;
   message: string;

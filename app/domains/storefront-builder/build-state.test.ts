@@ -41,6 +41,8 @@ const ryzen: StorefrontProductOptionDto = {
   image: null,
   price: { amount: "399.99", currencyCode: "USD" },
   available: true,
+  purchasable: true,
+  unavailableReason: null,
   specifications: { socket: "AM5" },
 };
 

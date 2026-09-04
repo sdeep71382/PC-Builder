@@ -118,6 +118,7 @@ function defaultProducts() {
       id: "gid://shopify/Product/1",
       title: "Ryzen Test A",
       vendor: "AMD",
+      status: "ACTIVE",
       featuredImage: { url: "https://cdn.shopify.com/cpu.jpg", altText: "CPU" },
       variants: {
         nodes: [
@@ -144,6 +145,7 @@ function defaultProducts() {
       id: "gid://shopify/Product/invalid",
       title: "Unavailable Product",
       vendor: "AMD",
+      status: "ACTIVE",
       featuredImage: null,
       variants: { nodes: [] },
     },

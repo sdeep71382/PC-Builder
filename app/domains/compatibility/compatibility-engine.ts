@@ -1,13 +1,13 @@
 import type {
   CompatibilityEvaluationResult,
-  CompatibilityRule,
+  CompatibilityEvaluationRule,
   CompatibilitySelection,
   CompatibilityUnknown,
   CompatibilityViolation,
 } from "./types";
 
 interface EvaluationInput {
-  rules: CompatibilityRule[];
+  rules: CompatibilityEvaluationRule[];
   selections: CompatibilitySelection[];
 }
 
@@ -16,7 +16,7 @@ interface CandidateEvaluationInput extends EvaluationInput {
 }
 
 interface RuleEvaluationInput {
-  rule: CompatibilityRule;
+  rule: CompatibilityEvaluationRule;
   source?: CompatibilitySelection;
   target?: CompatibilitySelection;
 }
@@ -44,7 +44,7 @@ export function getViolations(result: CompatibilityEvaluationResult): Compatibil
 
 export function getCompatibleVariants<T extends CompatibilitySelection>(
   candidates: T[],
-  rules: CompatibilityRule[],
+  rules: CompatibilityEvaluationRule[],
   selections: CompatibilitySelection[]
 ): T[] {
   return candidates.filter((candidate) =>
@@ -91,7 +91,7 @@ export function evaluateRule(input: RuleEvaluationInput): CompatibilityEvaluatio
 }
 
 function evaluateSelections(
-  rules: CompatibilityRule[],
+  rules: CompatibilityEvaluationRule[],
   selections: CompatibilitySelection[],
   options: { candidateCategory?: string } = {}
 ): CompatibilityEvaluationResult {
@@ -107,11 +107,12 @@ function evaluateSelections(
       continue;
     }
 
-    const result = evaluateRule({
-      rule,
-      source: selectionByCategory.get(normalizeCategory(rule.sourceCategory)),
-      target: selectionByCategory.get(normalizeCategory(rule.targetCategory)),
-    });
+    const source = selectionByCategory.get(normalizeCategory(rule.sourceCategory));
+    const target = selectionByCategory.get(normalizeCategory(rule.targetCategory));
+    if (!source || !target) continue;
+    const result = evaluateRule({ rule, source, target });
+    // Candidate filtering must not reject a component because a rule references
+    // another component that the shopper has not reached yet.
     violations.push(...result.violations);
     unknowns.push(...result.unknowns);
   }
@@ -145,7 +146,7 @@ function evaluatePowerBudget(selections: CompatibilitySelection[]): Compatibilit
 }
 
 function compareValues(
-  rule: CompatibilityRule,
+  rule: CompatibilityEvaluationRule,
   sourceValue: unknown,
   targetValue: unknown
 ): boolean | null {
@@ -193,7 +194,7 @@ function resultFrom(
   return PASS_RESULT;
 }
 
-function ruleTouchesCategory(rule: CompatibilityRule, category: string): boolean {
+function ruleTouchesCategory(rule: CompatibilityEvaluationRule, category: string): boolean {
   const normalized = normalizeCategory(category);
   return normalizeCategory(rule.sourceCategory) === normalized || normalizeCategory(rule.targetCategory) === normalized;
 }
@@ -216,7 +217,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function violationFor(
-  rule: CompatibilityRule,
+  rule: CompatibilityEvaluationRule,
   sourceValue: unknown,
   targetValue: unknown
 ): CompatibilityViolation {
@@ -235,7 +236,7 @@ function violationFor(
 }
 
 function unknownResult(
-  rule: CompatibilityRule,
+  rule: CompatibilityEvaluationRule,
   reason: string
 ): CompatibilityEvaluationResult {
   return {
@@ -258,7 +259,7 @@ function unknownResult(
 }
 
 function fallbackMessage(
-  rule: CompatibilityRule,
+  rule: CompatibilityEvaluationRule,
   sourceValue: unknown,
   targetValue: unknown
 ): string {

@@ -128,13 +128,6 @@ export async function ensureDefaultPcCompatibilityRules(
   builderId: string
 ): Promise<void> {
   await assertBuilderForShop(shopId, builderId);
-  const existingCount = await prisma.compatibilityRule.count({
-    where: { shopId, builderId },
-  });
-  if (existingCount > 0) {
-    return;
-  }
-
   const defaults: CompatibilityRuleInput[] = [
     {
       sourceCategory: "CPU",
@@ -186,10 +179,33 @@ export async function ensureDefaultPcCompatibilityRules(
       enabled: true,
       message: "CPU socket must be supported by the cooler.",
     },
+    {
+      sourceCategory: "GPU",
+      sourceField: "recommendedPsuW",
+      operator: "LESS_THAN_OR_EQUAL",
+      targetCategory: "PSU",
+      targetField: "wattage",
+      severity: "error",
+      enabled: true,
+      message: "Power supply wattage must meet the graphics card recommendation.",
+    },
   ];
 
   for (const rule of defaults) {
-    await createCompatibilityRule(shopId, builderId, rule);
+    const existing = await prisma.compatibilityRule.findFirst({
+      where: {
+        shopId,
+        builderId,
+        sourceCategory: rule.sourceCategory,
+        sourceField: rule.sourceField,
+        operator: rule.operator,
+        targetCategory: rule.targetCategory,
+        targetField: rule.targetField,
+      },
+    });
+    if (!existing) {
+      await createCompatibilityRule(shopId, builderId, rule);
+    }
   }
 }
 

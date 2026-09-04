@@ -28,6 +28,19 @@ export interface CompatibilityRule {
   updatedAt: Date;
 }
 
+export type CompatibilityEvaluationRule = Pick<
+  CompatibilityRule,
+  | "id"
+  | "sourceCategory"
+  | "sourceField"
+  | "operator"
+  | "targetCategory"
+  | "targetField"
+  | "severity"
+  | "enabled"
+  | "message"
+>;
+
 export type CompatibilityEvaluationStatus = "PASS" | "FAIL" | "UNKNOWN";
 
 export interface CompatibilitySelection {

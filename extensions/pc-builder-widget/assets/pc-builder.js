@@ -68,7 +68,14 @@
       if (!source || !target) return;
       var left = source.specifications[rule.sourceField];
       var right = target.specifications[rule.targetField];
-      if (left === undefined || left === null || left === "" || right === undefined || right === null || right === "") return;
+      if (left === undefined || left === null || left === "" || right === undefined || right === null || right === "") {
+        // Do not show a candidate when an active compatibility rule cannot be verified.
+        // Missing metadata must be completed in the admin specification workflow.
+        if (source === candidate || target === candidate) {
+          reasons.push("Required compatibility specifications are missing.");
+        }
+        return;
+      }
       var pass = rule.operator === "EQUALS" ? left === right
         : rule.operator === "IN" ? Array.isArray(right) && right.indexOf(left) !== -1
         : rule.operator === "GREATER_THAN_OR_EQUAL" ? typeof left === "number" && typeof right === "number" && left >= right
@@ -99,6 +106,11 @@
       cooler: "cooler",
     };
     return aliases[value.replace(/[-_]/g, "")] || aliases[value] || value;
+  }
+
+  function submissionKey(step) {
+    return "step-" + step.position + "-" + String(step.name || "")
+      .trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   }
 
   function render(root, data, state) {
@@ -201,7 +213,7 @@
             '" aria-pressed="' +
             selected +
             '" ' +
-            ((!product.available || incompatible) ? "disabled" : "") +
+            ((!product.available || product.purchasable === false || incompatible) ? "disabled" : "") +
             ">" +
             (product.image
               ? '<img class="pc-builder-card__image" src="' +
@@ -220,7 +232,9 @@
             money(product.price) +
             "</span>" +
             '<span class="pc-builder-muted">' +
-            (!product.available ? "Out of stock" : incompatible ? reasons.join(" ") : "Compatible") +
+            (product.purchasable === false
+              ? (product.unavailableReason === "NOT_PUBLISHED" ? "Not available on the Online Store" : "Currently unavailable")
+              : (!product.available ? "Out of stock" : "Available")) +
             "</span>" +
             "</span></button>"
           );
@@ -260,7 +274,12 @@
   function bind(root, data, state) {
     root.querySelectorAll("[data-step-index]").forEach(function (button) {
       button.addEventListener("click", function () {
-        state.currentStep = Number(button.dataset.stepIndex);
+        var targetIndex = Number(button.dataset.stepIndex);
+        if (targetIndex > state.currentStep && Object.keys(state.selections).length) {
+          loadStep(root, data, state, targetIndex);
+          return;
+        }
+        state.currentStep = targetIndex;
         state.search = "";
         render(root, data, state);
       });
@@ -295,9 +314,7 @@
       render(root, data, state);
     });
     root.querySelector("[data-next]")?.addEventListener("click", function () {
-      state.currentStep = Math.min(data.builder.steps.length - 1, state.currentStep + 1);
-      state.search = "";
-      render(root, data, state);
+      loadStep(root, data, state, Math.min(data.builder.steps.length - 1, state.currentStep + 1));
     });
     root.querySelector("[data-skip]")?.addEventListener("click", function () {
       var step = data.builder.steps[state.currentStep];
@@ -313,15 +330,43 @@
       addButton.disabled = true;
       addButton.textContent = "Validating...";
       var payload = {};
-      Object.keys(state.selections).forEach(function (key) { payload[key] = state.selections[key].variantId; });
+      data.builder.steps.forEach(function (step) {
+        var selection = state.selections[step.publicId];
+        if (selection) payload[submissionKey(step)] = selection.variantId;
+      });
       var configuredPath = root.getAttribute("data-proxy-path") || "/apps/pc-builder-1";
       fetch(configuredPath + "/builder", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ builderId: data.builder.publicId, selections: payload, sessionId: state.sessionId }) })
         .then(function (response) { return response.json().then(function (body) { if (!response.ok || !body.valid) throw new Error((body.errors || []).map(function (error) { return error.message; }).join(" ") || "This build could not be validated."); return body; }); })
         .then(function (validated) {
-          return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: validated.selections.map(function (selection) { return { id: gidNumericId(selection.variantId), quantity: 1, properties: { _pc_builder_id: data.builder.publicId, _pc_build_session: validated.sessionId, _pc_component_type: selection.stepKey, _pc_builder_step_id: selection.stepId } }; }) }) });
+          var items = validated.selections.map(function (selection) {
+            return { id: String(gidNumericId(selection.variantId)), quantity: 1, properties: { "PC Builder": data.builder.name, "Build session": validated.sessionId, Component: selection.stepKey, "Builder step": selection.stepId } };
+          });
+          console.info("PC Builder cart payload", {
+            builderId: data.builder.publicId,
+            sessionId: validated.sessionId,
+            selections: validated.selections.map(function (selection) {
+              return { stepId: selection.stepId, stepKey: selection.stepKey, variantGid: selection.variantId };
+            }),
+            items: items.map(function (item) { return { id: item.id, quantity: item.quantity, hasProperties: Boolean(item.properties) }; }),
+          });
+          return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items }) })
+            .then(function (response) {
+              if (response.ok) return response;
+              return response.text().then(function (body) {
+                console.error("PC Builder cart attempt 1 failed", { status: response.status, responseBody: body, withProperties: true });
+                return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items.map(function (item) { return { id: item.id, quantity: item.quantity }; }) }) });
+              });
+            });
         })
         .then(function (response) {
-          if (!response.ok) throw new Error("The build was validated, but Shopify could not add it to the cart.");
+          if (!response.ok) {
+            return response.text().then(function (body) {
+              var detail = "";
+              try { detail = JSON.parse(body).description || JSON.parse(body).message || ""; } catch (_error) { detail = body; }
+              console.error("PC Builder cart attempt 2 failed", { status: response.status, responseBody: body, withProperties: false });
+              throw new Error("The build was validated, but Shopify could not add it to the cart." + (detail ? " " + detail : ""));
+            });
+          }
           return fetch((root.getAttribute("data-proxy-path") || "/apps/pc-builder-1") + "/builder", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ action: "mark_cart_added", sessionId: state.sessionId }) });
         })
         .then(function (response) {
@@ -330,6 +375,32 @@
           window.location.assign("/cart");
         })
         .catch(function (error) { addButton.disabled = false; addButton.textContent = "Add build to cart"; state.notice = error.message; render(root, data, state); });
+    });
+  }
+
+  function loadStep(root, data, state, targetIndex) {
+    var nextStep = data.builder.steps[targetIndex];
+    if (!nextStep) return;
+    var payload = {};
+    Object.keys(state.selections).forEach(function (key) { payload[key] = state.selections[key].variantId; });
+    var nextButton = root.querySelector("[data-next]");
+    if (nextButton) { nextButton.disabled = true; nextButton.textContent = "Loading..."; }
+    fetch((root.getAttribute("data-proxy-path") || "/apps/pc-builder-1") + "/builder", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ action: "compatible_products", builderId: data.builder.publicId, stepKey: nextStep.publicId, selections: payload })
+    }).then(function (response) {
+      return response.json().then(function (body) {
+        if (!response.ok) throw new Error(body.error || "Could not load compatible products.");
+        return body;
+      });
+    }).then(function (body) {
+      nextStep.products = body.products || [];
+      state.currentStep = targetIndex;
+      state.search = "";
+      render(root, data, state);
+    }).catch(function (error) {
+      state.notice = error.message;
+      render(root, data, state);
     });
   }
 
@@ -349,9 +420,7 @@
       delete state.selections[step.publicId];
       removed.push(step.name);
     });
-    state.notice = removed.length
-      ? "Your " + removed.join(" and ") + " selection was removed because it is no longer compatible."
-      : "";
+    state.notice = "";
   }
 
   function escapeHtml(value) {
@@ -385,6 +454,7 @@
                 var error = new Error(data.reason || data.error || "unavailable");
                 error.status = response.status;
                 error.path = path;
+                error.responseBody = data;
                 errors.push(error);
                 throw error;
               }
@@ -392,7 +462,14 @@
             });
         });
       });
-    }, Promise.reject(new Error("unavailable"))).catch(function () {
+    }, Promise.reject(new Error("unavailable"))).catch(function (error) {
+      console.error("PC Builder catalog load failed", {
+        path: error && error.path ? error.path : null,
+        status: error && error.status ? error.status : null,
+        message: error && error.message ? error.message : "unavailable",
+        responseBody: error && error.responseBody ? error.responseBody : null,
+        attemptedPaths: paths,
+      });
       throw errors[0] || new Error("unavailable");
     });
   }
@@ -400,9 +477,16 @@
   function init(root) {
     fetchBuilder(root)
       .then(function (data) {
+        console.info("PC Builder catalog loaded", {
+          builderId: data && data.builder ? data.builder.publicId : null,
+          steps: data && data.builder ? data.builder.steps.map(function (step) {
+            return { name: step.name, state: step.state, productCount: step.products.length };
+          }) : [],
+        });
         render(root, data, createState(data.builder.publicId));
       })
       .catch(function (error) {
+        console.error("PC Builder initialization failed", error);
         var detail = error && error.message ? String(error.message) : "unavailable";
         var status = error && error.status ? "Status " + error.status + ": " : "";
         var path = error && error.path ? " (" + error.path + ")" : "";

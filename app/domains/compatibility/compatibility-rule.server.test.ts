@@ -12,6 +12,8 @@ const { mockPrismaClient, resetRules } = vi.hoisted(() => {
     { id: "board-memory", shopId: "shop-a", category: "Motherboard", key: "memoryType", label: "Memory type", dataType: "STRING" },
     { id: "ram-memory", shopId: "shop-a", category: "RAM", key: "memoryType", label: "Memory type", dataType: "STRING" },
     { id: "gpu-length", shopId: "shop-a", category: "GPU", key: "lengthMm", label: "Length", dataType: "NUMBER" },
+    { id: "gpu-psu", shopId: "shop-a", category: "GPU", key: "recommendedPsuW", label: "Recommended PSU", dataType: "NUMBER" },
+    { id: "psu-wattage", shopId: "shop-a", category: "PSU", key: "wattage", label: "Wattage", dataType: "NUMBER" },
     { id: "case-gpu", shopId: "shop-a", category: "Case", key: "maxGpuLengthMm", label: "Max GPU length", dataType: "NUMBER" },
     { id: "cooler-height", shopId: "shop-a", category: "Cooler", key: "heightMm", label: "Height", dataType: "NUMBER" },
     { id: "case-cooler", shopId: "shop-a", category: "Case", key: "maxCoolerHeightMm", label: "Max cooler height", dataType: "NUMBER" },
@@ -64,9 +66,14 @@ const { mockPrismaClient, resetRules } = vi.hoisted(() => {
       findFirst: vi.fn(({ where }) => {
         return Object.values(rules).find(
           (rule) =>
-            rule.id === where.id &&
             rule.shopId === where.shopId &&
-            rule.builderId === where.builderId
+            rule.builderId === where.builderId &&
+            (where.id === undefined || rule.id === where.id) &&
+            (where.sourceCategory === undefined || rule.sourceCategory === where.sourceCategory) &&
+            (where.sourceField === undefined || rule.sourceField === where.sourceField) &&
+            (where.operator === undefined || rule.operator === where.operator) &&
+            (where.targetCategory === undefined || rule.targetCategory === where.targetCategory) &&
+            (where.targetField === undefined || rule.targetField === where.targetField)
         ) ?? null;
       }),
       count: vi.fn(({ where }) => {
@@ -188,8 +195,9 @@ describe("compatibility rule service", () => {
     await ensureDefaultPcCompatibilityRules("shop-a", "builder-a");
 
     const rules = await listCompatibilityRules("shop-a", "builder-a");
-    expect(rules).toHaveLength(5);
+    expect(rules).toHaveLength(6);
     expect(rules.some((rule) => rule.operator === "IN")).toBe(true);
+    expect(rules.some((rule) => rule.sourceField === "recommendedPsuW")).toBe(true);
   });
 
   it("enables, disables, and deletes rules with shop scope", async () => {

@@ -12,6 +12,7 @@ import { evaluateBuild } from "../compatibility/compatibility-engine";
 import type { CompatibilitySelection, CompatibilityRuleOperator, CompatibilityRuleSeverity } from "../compatibility/types";
 import type { StorefrontValidationResult, StorefrontValidationError } from "./types";
 import { upsertValidatedBuild } from "../build-sessions/build-session.server";
+import { getVariantPurchasability } from "./variant-purchasability";
 
 const STOREFRONT_LOOKUP_TIMEOUT_MS = 10000;
 
@@ -171,7 +172,8 @@ export async function validateBuildForCart(
   const pendingSelections: Array<{ step: typeof builder.builderSteps[number]; stepKey: string; variantId: string; product: StorefrontProductOptionDto }> = [];
   for (const step of builder.builderSteps) {
     const stepKeyValue = inferSpecificationCategory(step.name);
-    const variantId = submittedSelections[`step-${step.position}-${stepKey(step.name)}`];
+    const submittedStepKey = `step-${step.position}-${stepKey(step.name)}`;
+    const variantId = submittedSelections[submittedStepKey] ?? submittedSelections[step.id];
     if (!variantId) {
       if (step.required) errors.push({ type: "MISSING_REQUIRED_STEP", stepKey: stepKeyValue, message: `Choose an option for ${step.name}.` });
       continue;
@@ -187,7 +189,10 @@ export async function validateBuildForCart(
       errors.push({ type: "NOT_IN_STEP_CATALOG", stepKey: stepKeyValue, variantId, message: "This product is no longer available in this builder step." });
       continue;
     }
-    if (!product.available) errors.push({ type: "OUT_OF_STOCK", stepKey: stepKeyValue, variantId, message: `${product.productTitle} is no longer available.` });
+    if (!product.purchasable) {
+      const type = product.unavailableReason === "NOT_PUBLISHED" ? "NOT_PUBLISHED" : product.unavailableReason === "PRODUCT_INACTIVE" ? "PRODUCT_INACTIVE" : product.unavailableReason === "VARIANT_NOT_FOUND" ? "VARIANT_NOT_FOUND" : product.unavailableReason === "UNKNOWN" ? "UNKNOWN" : "VARIANT_UNAVAILABLE";
+      errors.push({ type, stepKey: stepKeyValue, variantId, message: type === "NOT_PUBLISHED" ? `${product.productTitle} is not currently available on the Online Store.` : `${product.productTitle} is currently unavailable for purchase.` });
+    }
     pendingSelections.push({ step, stepKey: stepKeyValue, variantId, product });
   }
   const specs = await loadVariantSpecifications(shopId, pendingSelections.map((item) => item.variantId));
@@ -289,6 +294,7 @@ async function listCollectionProducts(
                   id
                   title
                   vendor
+                  status
                   featuredImage {
                     url
                     altText
@@ -298,7 +304,10 @@ async function listCollectionProducts(
                       id
                       title
                       sku
-                      availableForSale
+            availableForSale
+                  product {
+                    id
+                  }
                       image {
                         url
                         altText
@@ -322,6 +331,13 @@ async function listCollectionProducts(
       STOREFRONT_LOOKUP_TIMEOUT_MS,
       "Shopify storefront response timed out."
     )) as StorefrontCollectionResponse;
+    if (json.errors?.length) {
+      console.error("PC Builder Shopify collection query failed", {
+        collectionId,
+        errors: json.errors.map((error) => error.message),
+      });
+      return { type: "failure", message: "Collection unavailable." };
+    }
     const collection = json.data?.collection ?? null;
     if (!collection) {
       return { type: "failure", message: "Collection unavailable." };
@@ -333,21 +349,34 @@ async function listCollectionProducts(
       products: collection.products.nodes.flatMap((product) =>
         product.variants.nodes
           .filter((variant) => Boolean(variant?.id && variant.price))
-          .map((variant) => ({
-            productId: product.id,
-            variantId: variant.id,
-            productTitle: product.title,
-            variantTitle: variant.title && variant.title !== "Default Title" ? variant.title : null,
-            vendor: product.vendor || null,
-            sku: variant.sku || null,
-            image: variant.image ?? product.featuredImage ?? null,
-            price: {
-              amount: variant.price,
-              currencyCode,
-            },
-            available: variant.availableForSale,
-            specifications: {},
-          }))
+          .map((variant) => {
+            const purchasability = getVariantPurchasability({
+              exists: true,
+              productStatus: product.status,
+              onlineStorePublished: true,
+              availableForSale: variant.availableForSale,
+            });
+            return {
+              productId: product.id,
+              variantId: variant.id,
+              productTitle: product.title,
+              variantTitle: variant.title && variant.title !== "Default Title" ? variant.title : null,
+              vendor: product.vendor || null,
+              sku: variant.sku || null,
+              image: variant.image ?? product.featuredImage ?? null,
+              price: {
+                amount: variant.price,
+                currencyCode,
+              },
+              available: variant.availableForSale,
+              purchasable: purchasability.purchasable,
+              unavailableReason:
+                purchasability.purchasable || purchasability.reason === "AVAILABLE"
+                  ? null
+                  : purchasability.reason,
+              specifications: {},
+            };
+          })
       ),
     };
   } catch (error) {
@@ -371,6 +400,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 interface StorefrontCollectionResponse {
+  errors?: Array<{ message: string }>;
   data?: {
     shop: {
       currencyCode: string;
@@ -381,6 +411,7 @@ interface StorefrontCollectionResponse {
           id: string;
           title: string;
           vendor: string;
+          status: string;
           featuredImage: { url: string; altText: string | null } | null;
           variants: {
             nodes: Array<{
