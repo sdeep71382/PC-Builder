@@ -13,7 +13,6 @@ import type { CompatibilitySelection, CompatibilityRuleOperator, CompatibilityRu
 import type { StorefrontValidationResult, StorefrontValidationError } from "./types";
 import { upsertValidatedBuild } from "../build-sessions/build-session.server";
 import { getVariantPurchasability } from "./variant-purchasability";
-import { ensureBundleParent } from "./bundle-parent.server";
 
 const STOREFRONT_LOOKUP_TIMEOUT_MS = 10000;
 
@@ -206,19 +205,7 @@ export async function validateBuildForCart(
   for (const violation of compatibility.violations) errors.push({ type: "INCOMPATIBLE", message: violation.message });
   for (const unknown of compatibility.unknowns) errors.push({ type: "UNKNOWN", message: unknown.message });
   let valid = errors.length === 0;
-  let bundleParentVariantId: string | undefined;
-  if (valid) {
-    try {
-      bundleParentVariantId = await ensureBundleParent(shopId, admin);
-    } catch (error) {
-      console.error("PC Builder bundle parent provisioning failed", {
-        shopId,
-        message: error instanceof Error ? error.message : "Unknown bundle provisioning error.",
-      });
-      errors.push({ type: "UNKNOWN", message: "The bundle is temporarily unavailable. Please try again." });
-      valid = false;
-    }
-  }
+  const bundleParentVariantId = valid ? selectBundleParentVariantId(cartSelections) : undefined;
   if (valid) {
     await upsertValidatedBuild({
       shopId,
@@ -234,6 +221,12 @@ export async function validateBuildForCart(
     });
   }
   return { valid, sessionId, errors, bundleParentVariantId, selections: cartSelections };
+}
+
+export function selectBundleParentVariantId(
+  selections: Array<{ variantId: string }>
+): string | undefined {
+  return selections[0]?.variantId;
 }
 
 function toRule(rule: { id: string; shopId: string; builderId: string; sourceCategory: string; sourceField: string; operator: string; targetCategory: string; targetField: string; comparisonValue: unknown; severity: string; enabled: boolean; message: string; createdAt: Date; updatedAt: Date }) {

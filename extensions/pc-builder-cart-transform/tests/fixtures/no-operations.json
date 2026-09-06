@@ -10,7 +10,13 @@
             "quantity": 1,
             "session": null,
             "parent": null,
-            "merchandise": { "__typename": "ProductVariant", "id": "gid://shopify/ProductVariant/1" }
+            "component": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/1",
+              "title": null,
+              "product": { "title": "Unused" }
+            }
           }
         ]
       }

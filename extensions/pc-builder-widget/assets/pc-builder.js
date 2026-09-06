@@ -345,11 +345,11 @@
               id: String(gidNumericId(selection.variantId)),
               quantity: 1,
               properties: {
-                "PC Builder": data.builder.name,
-                "Build session": validated.sessionId,
-                "Bundle parent variant": bundleParentGid,
-                Component: selection.stepKey,
-                "Builder step": selection.stepId,
+                _pc_builder: data.builder.name,
+                _pc_build_session: validated.sessionId,
+                _pc_bundle_parent_variant: bundleParentGid,
+                _pc_component: selection.stepKey,
+                _pc_builder_step: selection.stepId,
               },
             };
           });
@@ -362,6 +362,7 @@
             items: items.map(function (item) { return { id: item.id, quantity: item.quantity, hasProperties: Boolean(item.properties) }; }),
           });
           console.info("PC Builder cart submit", {
+            bundleMode: "dynamic-first-component",
             itemCount: items.length,
             variantIds: items.map(function (item) { return item.id; }),
             quantities: items.map(function (item) { return item.quantity; }),

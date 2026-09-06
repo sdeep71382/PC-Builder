@@ -8,6 +8,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
+import { ensureCartTransform } from "../domains/storefront-builder/cart-transform.server";
 import builderAdminStyles from "../styles/builder-admin.css?url";
 
 export const links: LinksFunction = () => [
@@ -15,7 +16,14 @@ export const links: LinksFunction = () => [
 ];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
+  try {
+    await ensureCartTransform(admin);
+  } catch (error) {
+    console.warn("PC Builder cart transform activation deferred", {
+      message: error instanceof Error ? error.message : "Unknown cart transform activation error.",
+    });
+  }
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

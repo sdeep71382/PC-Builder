@@ -42,6 +42,7 @@ vi.mock("../../db.server", () => ({
 import {
   getDefaultStorefrontBuilder,
   getPublicStorefrontBuilder,
+  selectBundleParentVariantId,
 } from "./storefront-builder.server";
 
 function publishedBuilder(overrides: Record<string, unknown> = {}) {
@@ -265,5 +266,20 @@ describe("public storefront builder service", () => {
 
     expect(result.type).toBe("unavailable");
     expect(prismaMock.builder.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("dynamic bundle parent selection", () => {
+  it("uses the first selected component variant as the bundle parent", () => {
+    expect(
+      selectBundleParentVariantId([
+        { variantId: "gid://shopify/ProductVariant/101" },
+        { variantId: "gid://shopify/ProductVariant/505" },
+      ])
+    ).toBe("gid://shopify/ProductVariant/101");
+  });
+
+  it("returns no parent when there are no selected components", () => {
+    expect(selectBundleParentVariantId([])).toBeUndefined();
   });
 });

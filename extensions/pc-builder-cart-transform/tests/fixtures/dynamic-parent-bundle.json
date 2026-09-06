@@ -1,0 +1,100 @@
+{
+  "payload": {
+    "export": "cart-transform-run",
+    "target": "cart.transform.run",
+    "input": {
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/1",
+            "quantity": 1,
+            "session": { "value": "pcb_test_build_123" },
+            "parent": { "value": "gid://shopify/ProductVariant/101" },
+            "component": { "value": "CPU" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/101",
+              "title": "Default Title",
+              "product": { "title": "Xeon Builder CPU" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/2",
+            "quantity": 1,
+            "session": { "value": "pcb_test_build_123" },
+            "parent": { "value": "gid://shopify/ProductVariant/101" },
+            "component": { "value": "Motherboard" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/202",
+              "title": "Default Title",
+              "product": { "title": "B760 Builder Motherboard" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/3",
+            "quantity": 1,
+            "session": { "value": "pcb_test_build_123" },
+            "parent": { "value": "gid://shopify/ProductVariant/101" },
+            "component": { "value": "RAM" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/303",
+              "title": "Default Title",
+              "product": { "title": "32GB DDR5 Builder Memory" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/4",
+            "quantity": 1,
+            "session": { "value": "pcb_test_build_123" },
+            "parent": { "value": "gid://shopify/ProductVariant/101" },
+            "component": { "value": "Storage" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/404",
+              "title": "Default Title",
+              "product": { "title": "4TB NVMe Builder SSD" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/5",
+            "quantity": 1,
+            "session": { "value": "pcb_test_build_123" },
+            "parent": { "value": "gid://shopify/ProductVariant/101" },
+            "component": { "value": "Case" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/505",
+              "title": "Default Title",
+              "product": { "title": "Full Tower Builder Case" }
+            }
+          }
+        ]
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "linesMerge": {
+            "cartLines": [
+              { "cartLineId": "gid://shopify/CartLine/1", "quantity": 1 },
+              { "cartLineId": "gid://shopify/CartLine/2", "quantity": 1 },
+              { "cartLineId": "gid://shopify/CartLine/3", "quantity": 1 },
+              { "cartLineId": "gid://shopify/CartLine/4", "quantity": 1 },
+              { "cartLineId": "gid://shopify/CartLine/5", "quantity": 1 }
+            ],
+            "parentVariantId": "gid://shopify/ProductVariant/101",
+            "attributes": [
+              { "key": "CPU", "value": "Xeon Builder CPU" },
+              { "key": "Motherboard", "value": "B760 Builder Motherboard" },
+              { "key": "RAM", "value": "32GB DDR5 Builder Memory" },
+              { "key": "Storage", "value": "4TB NVMe Builder SSD" },
+              { "key": "Case", "value": "Full Tower Builder Case" }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -3,9 +3,9 @@ query CartTransformRunInput {
     lines {
       id
       quantity
-      session: attribute(key: "Build session") { value }
-      parent: attribute(key: "Bundle parent variant") { value }
-      component: attribute(key: "Component") { value }
+      session: attribute(key: "_pc_build_session") { value }
+      parent: attribute(key: "_pc_bundle_parent_variant") { value }
+      component: attribute(key: "_pc_component") { value }
       merchandise {
         __typename
         ... on ProductVariant {
