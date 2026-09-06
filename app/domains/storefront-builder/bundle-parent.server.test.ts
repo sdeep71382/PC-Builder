@@ -25,12 +25,11 @@ describe("ensureBundleParent", () => {
         .mockResolvedValueOnce(response({ products: { nodes: [] } }))
         .mockResolvedValueOnce(response({ products: { nodes: [] } }))
         .mockResolvedValueOnce(response({ productCreate: { product: { id: "product-1", title: "PC Builder Bundle", status: "ACTIVE", tags: ["pc-builder-internal-bundle"], variants: { nodes: [{ id: "variant-1" }] } }, userErrors: [] } }))
-        .mockResolvedValueOnce(response({ publications: { nodes: [{ id: "publication-1", name: "Online Store" }] } }))
-        .mockResolvedValueOnce(response({ publishablePublish: { userErrors: [] } })),
+        .mockResolvedValueOnce(response({ publishablePublishToCurrentChannel: { userErrors: [] } })),
     } as any;
 
     await expect(ensureBundleParent("shop-a", admin)).resolves.toBe("variant-1");
-    expect(admin.graphql).toHaveBeenCalledTimes(5);
+    expect(admin.graphql).toHaveBeenCalledTimes(4);
     expect(prismaMock.bundleParent.upsert).toHaveBeenCalledWith({
       where: { shopId: "shop-a" },
       create: { shopId: "shop-a", shopifyProductId: "product-1", shopifyVariantId: "variant-1" },
@@ -44,11 +43,10 @@ describe("ensureBundleParent", () => {
       graphql: vi.fn()
         .mockResolvedValueOnce(response({ product: { id: "product-1", title: "PC Builder Bundle", status: "DRAFT", tags: [], variants: { nodes: [{ id: "variant-1" }] } } }))
         .mockResolvedValueOnce(response({ productUpdate: { userErrors: [] } }))
-        .mockResolvedValueOnce(response({ publications: { nodes: [{ id: "publication-1", name: "Online Store" }] } }))
-        .mockResolvedValueOnce(response({ publishablePublish: { userErrors: [] } })),
+        .mockResolvedValueOnce(response({ publishablePublishToCurrentChannel: { userErrors: [] } })),
     } as any;
 
     await expect(ensureBundleParent("shop-a", admin)).resolves.toBe("variant-1");
-    expect(admin.graphql).toHaveBeenCalledTimes(4);
+    expect(admin.graphql).toHaveBeenCalledTimes(3);
   });
 });

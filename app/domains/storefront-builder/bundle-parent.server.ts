@@ -152,12 +152,24 @@ async function activateProduct(admin: AdminApiContext, product: BundleProduct): 
 
 async function publishProduct(admin: AdminApiContext, productId: string): Promise<void> {
   console.info("PC Builder publishing bundle parent to Online Store", { productId });
+  const currentChannel = await admin.graphql(
+    `#graphql
+      mutation PcBuilderPublishBundle($id: ID!) {
+        publishablePublishToCurrentChannel(id: $id) { userErrors { field message } }
+      }
+    `,
+    { variables: { id: productId } }
+  );
+  const currentJson = (await currentChannel.json()) as ShopifyResponse<{ publishablePublishToCurrentChannel: { userErrors: Array<{ message: string }> } }>;
+  if (!currentJson.errors?.length && !(currentJson.data?.publishablePublishToCurrentChannel.userErrors.length)) return;
+
   const publicationsResponse = await admin.graphql(`#graphql query PcBuilderPublications { publications(first: 50) { nodes { id name } } }`);
   const publicationsJson = (await publicationsResponse.json()) as ShopifyResponse<{ publications: { nodes: Array<{ id: string; name: string }> } }>;
   if (publicationsJson.errors?.length) throw new Error(publicationsJson.errors.map((error) => error.message).join(" "));
   const onlineStore = publicationsJson.data?.publications.nodes.find((publication) => publication.name.toLowerCase() === "online store");
   if (!onlineStore) {
-    throw new Error("Online Store sales channel is unavailable. Enable the Online Store channel to use PC Builder.");
+    const reason = currentJson.data?.publishablePublishToCurrentChannel.userErrors.map((error) => error.message).join(" ") || currentJson.errors?.map((error) => error.message).join(" ");
+    throw new Error(reason || "Online Store sales channel is unavailable. Enable the Online Store channel to use PC Builder.");
   }
 
   const publishResponse = await admin.graphql(
