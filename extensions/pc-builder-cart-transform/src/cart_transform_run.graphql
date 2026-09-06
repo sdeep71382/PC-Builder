@@ -1,0 +1,19 @@
+query CartTransformRunInput {
+  cart {
+    lines {
+      id
+      quantity
+      session: attribute(key: "Build session") { value }
+      parent: attribute(key: "Bundle parent variant") { value }
+      component: attribute(key: "Component") { value }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          title
+          product { title }
+        }
+      }
+    }
+  }
+}

@@ -53,6 +53,17 @@ model Builder {
   @@map("builders")
 }
 
+model BundleParent {
+  id                String   @id @default(cuid())
+  shopId            String   @unique
+  shopifyProductId  String
+  shopifyVariantId  String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("bundle_parents")
+}
+
 model BuilderStep {
   id        String  @id @default(cuid())
   shopId    String

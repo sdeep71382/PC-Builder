@@ -1,8 +1,18 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { authenticate } from "../shopify.server";
+import { ensureBundleParent } from "../domains/storefront-builder/bundle-parent.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  void request;
-  return null;
+  const { session, admin } = await authenticate.admin(request);
+  try {
+    await ensureBundleParent(session.shop, admin);
+  } catch (error) {
+    console.warn("PC Builder automatic bundle setup deferred", {
+      shopId: session.shop,
+      message: error instanceof Error ? error.message : "Unknown bundle setup error.",
+    });
+  }
+  return { bundleParentReady: true };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {

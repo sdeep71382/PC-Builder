@@ -83,5 +83,6 @@ export interface StorefrontValidationResult {
   valid: boolean;
   sessionId: string;
   errors: StorefrontValidationError[];
+  bundleParentVariantId?: string;
   selections: Array<{ stepKey: string; stepId: string; productId: string; variantId: string; price: StorefrontProductOptionDto["price"] }>;
 }

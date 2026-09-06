@@ -338,8 +338,20 @@
       fetch(configuredPath + "/builder", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ builderId: data.builder.publicId, selections: payload, sessionId: state.sessionId }) })
         .then(function (response) { return response.json().then(function (body) { if (!response.ok || !body.valid) throw new Error((body.errors || []).map(function (error) { return error.message; }).join(" ") || "This build could not be validated."); return body; }); })
         .then(function (validated) {
+          var bundleParentGid = validated.bundleParentVariantId;
+          if (!bundleParentGid) throw new Error("The bundle is temporarily unavailable. Please try again.");
           var items = validated.selections.map(function (selection) {
-            return { id: String(gidNumericId(selection.variantId)), quantity: 1, properties: { "PC Builder": data.builder.name, "Build session": validated.sessionId, Component: selection.stepKey, "Builder step": selection.stepId } };
+            return {
+              id: String(gidNumericId(selection.variantId)),
+              quantity: 1,
+              properties: {
+                "PC Builder": data.builder.name,
+                "Build session": validated.sessionId,
+                "Bundle parent variant": bundleParentGid,
+                Component: selection.stepKey,
+                "Builder step": selection.stepId,
+              },
+            };
           });
           console.info("PC Builder cart payload", {
             builderId: data.builder.publicId,
@@ -349,12 +361,22 @@
             }),
             items: items.map(function (item) { return { id: item.id, quantity: item.quantity, hasProperties: Boolean(item.properties) }; }),
           });
+          console.info("PC Builder cart submit", {
+            itemCount: items.length,
+            variantIds: items.map(function (item) { return item.id; }),
+            quantities: items.map(function (item) { return item.quantity; }),
+            bundleParentVariant: bundleParentGid,
+          });
           return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items }) })
+            .then(function (response) {
+              console.info("PC Builder cart response", { status: response.status, ok: response.ok });
+              return response;
+            })
             .then(function (response) {
               if (response.ok) return response;
               return response.text().then(function (body) {
                 console.error("PC Builder cart attempt 1 failed", { status: response.status, responseBody: body, withProperties: true });
-                return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items.map(function (item) { return { id: item.id, quantity: item.quantity }; }) }) });
+                return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items }) });
               });
             });
         })
