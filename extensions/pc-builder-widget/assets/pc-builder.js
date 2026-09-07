@@ -20,6 +20,9 @@
       skippedStepIds: [],
       search: "",
       notice: "",
+      sort: "default",
+      preview: false,
+      catalogCollapsed: false,
     };
   }
 
@@ -50,6 +53,60 @@
         .toLowerCase()
         .indexOf(normalized) !== -1;
     });
+  }
+
+  function sortedProducts(products, sort) {
+    var result = products.slice();
+    if (sort === "price-asc") {
+      return result.sort(function (left, right) { return Number(left.price.amount) - Number(right.price.amount); });
+    }
+    if (sort === "price-desc") {
+      return result.sort(function (left, right) { return Number(right.price.amount) - Number(left.price.amount); });
+    }
+    if (sort === "name") {
+      return result.sort(function (left, right) {
+        return String(left.productTitle).localeCompare(String(right.productTitle));
+      });
+    }
+    return result;
+  }
+
+  function selectedProduct(step, state) {
+    var selection = state.selections[step.publicId];
+    if (!selection) return null;
+    return step.products.find(function (product) { return product.variantId === selection.variantId; }) || null;
+  }
+
+  function selectedCount(state) {
+    return Object.keys(state.selections).length;
+  }
+
+  function specificationValue(value) {
+    if (Array.isArray(value)) return value.join(", ");
+    if (value && typeof value === "object") return Object.keys(value).map(function (key) {
+      return key + ": " + value[key];
+    }).join(", ");
+    return String(value);
+  }
+
+  function specificationMarkup(product) {
+    if (!product || !product.specifications) return "";
+    var entries = Object.keys(product.specifications).filter(function (key) {
+      var value = product.specifications[key];
+      return value !== undefined && value !== null && value !== "";
+    }).slice(0, 4);
+    if (!entries.length) return "";
+    return '<div class="pc-builder-specs" aria-label="Product specifications">' + entries.map(function (key) {
+      return '<div class="pc-builder-spec"><span>' + escapeHtml(key.replace(/[-_]/g, " ")) + '</span><strong>' + escapeHtml(specificationValue(product.specifications[key])) + '</strong></div>';
+    }).join("") + "</div>";
+  }
+
+  function visualMarkup(step, state) {
+    var product = selectedProduct(step, state);
+    if (product && product.image) {
+      return '<img class="pc-builder-visual__image" src="' + escapeHtml(product.image.url) + '" alt="' + escapeHtml(product.image.altText || product.productTitle) + '">';
+    }
+    return '<div class="pc-builder-visual__placeholder" aria-hidden="true"><span class="pc-builder-monitor"><span></span></span><span class="pc-builder-visual__hint">Select a component to preview it</span></div>';
   }
 
   function compatibilityFor(step, product, steps, state, rules) {
@@ -116,28 +173,28 @@
   function render(root, data, state) {
     var builder = data.builder;
     var steps = builder.steps;
-    var step = steps[state.currentStep];
     if (!steps.length) {
       root.innerHTML = '<div class="pc-builder-empty">This builder has no available steps.</div>';
       return;
     }
 
+    var step = steps[state.currentStep] || steps[0];
+    state.currentStep = steps.indexOf(step);
+    if (state.preview) {
+      root.innerHTML = summaryMarkup(builder, steps, state, total(state.selections));
+      bind(root, data, state);
+      return;
+    }
+
     var showTitle = root.dataset.showTitle !== "false";
     var showDescription = root.dataset.showDescription !== "false";
-    var products = filteredProducts(step.products, state.search);
+    var products = sortedProducts(filteredProducts(step.products, state.search), state.sort);
     var runningTotal = total(state.selections);
 
     root.innerHTML =
-      '<div class="pc-builder-shell">' +
-      '<header class="pc-builder-header">' +
-      '<div>' +
-      (showTitle ? '<h2 class="pc-builder-title">' + escapeHtml(builder.name) + "</h2>" : "") +
-      (showDescription && builder.description
-        ? '<p class="pc-builder-description">' + escapeHtml(builder.description) + "</p>"
-        : "") +
-      "</div>" +
-      '<div class="pc-builder-muted">Step ' + (state.currentStep + 1) + " of " + steps.length + "</div>" +
-      "</header>" +
+      '<div class="pc-builder-shell pc-builder-shell--editor' + (state.catalogCollapsed ? " is-catalog-collapsed" : "") + '">' +
+      '<header class="pc-builder-topbar">' +
+      '<button class="pc-builder-button pc-builder-button--exit" type="button" data-exit><span aria-hidden="true">&larr;</span> EXIT</button>' +
       '<nav class="pc-builder-steps" aria-label="Builder steps">' +
       steps
         .map(function (candidate, index) {
@@ -153,35 +210,39 @@
         })
         .join("") +
       "</nav>" +
-      '<div class="pc-builder-layout">' +
-      (state.notice ? '<div class="pc-builder-empty pc-builder-notice" role="status">' + escapeHtml(state.notice) + "</div>" : "") +
-      '<main class="pc-builder-main">' +
-      '<div class="pc-builder-toolbar">' +
-      '<div><h3 class="pc-builder-active-title">' +
-      escapeHtml(step.name) +
-      "</h3>" +
-      '<p class="pc-builder-muted">' +
-      (step.required ? "Required selection" : "Optional selection") +
-      "</p></div>" +
-      '<label>Search <input class="pc-builder-search" data-search type="search" value="' +
-      escapeHtml(state.search) +
-      '" autocomplete="off"></label>' +
+      '<button class="pc-builder-button pc-builder-button--preview" type="button" data-preview>PREVIEW</button>' +
+      "</header>" +
+      '<div class="pc-builder-workspace">' +
+      '<section class="pc-builder-visual-panel" aria-label="Selected component preview">' +
+      (showTitle ? '<h2 class="pc-builder-title">' + escapeHtml(builder.name) + "</h2>" : "") +
+      (showDescription && builder.description ? '<p class="pc-builder-description">' + escapeHtml(builder.description) + "</p>" : "") +
+      '<div class="pc-builder-current-step"><strong>' + escapeHtml(step.name) + '</strong><span>' + (step.required ? "Required selection" : "Optional selection") + '</span></div>' +
+      '<div class="pc-builder-visual">' + visualMarkup(step, state) + "</div>" +
+      specificationMarkup(selectedProduct(step, state)) +
+      "</section>" +
+      '<button class="pc-builder-collapse" type="button" data-toggle-products aria-label="Toggle product list" title="Toggle product list"><span aria-hidden="true">&lsaquo;</span></button>' +
+      '<section class="pc-builder-catalog" aria-label="Available products">' +
+      '<div class="pc-builder-catalog-toolbar">' +
+      '<label class="pc-builder-search-label">Search ' + escapeHtml(step.name) + ' models<input class="pc-builder-search" data-search type="search" value="' + escapeHtml(state.search) + '" autocomplete="off"></label>' +
+      '<label class="pc-builder-sort-label"><span class="pc-builder-visually-hidden">Sort products</span><select class="pc-builder-sort" data-sort>' +
+      '<option value="default" ' + (state.sort === "default" ? "selected" : "") + '>Default Sort</option>' +
+      '<option value="price-asc" ' + (state.sort === "price-asc" ? "selected" : "") + '>Price: Low to High</option>' +
+      '<option value="price-desc" ' + (state.sort === "price-desc" ? "selected" : "") + '>Price: High to Low</option>' +
+      '<option value="name" ' + (state.sort === "name" ? "selected" : "") + '>Name</option>' +
+      '</select></label>' +
       "</div>" +
+      (state.notice ? '<div class="pc-builder-notice" role="status">' + escapeHtml(state.notice) + "</div>" : "") +
       productMarkup(step, products, state, steps, data.compatibilityRules) +
-      '<div class="pc-builder-actions">' +
-      '<button class="pc-builder-button" type="button" data-back ' +
-      (state.currentStep === 0 ? "disabled" : "") +
-      ">Back</button>" +
-      (!step.required
-        ? '<button class="pc-builder-button" type="button" data-skip>Skip</button>'
-        : "") +
-      '<button class="pc-builder-button pc-builder-button--primary" type="button" data-next ' +
-      (step.required && !state.selections[step.publicId] ? "disabled" : "") +
-      ">Next</button>" +
+      "</section>" +
       "</div>" +
-      "</main>" +
-      summaryMarkup(steps, state, runningTotal) +
+      '<footer class="pc-builder-bottom-bar">' +
+      '<div class="pc-builder-build-totals"><strong>BUILD TOTALS</strong><span>' + (runningTotal ? money(runningTotal) : "Not started") + '</span><span>' + selectedCount(state) + ' of ' + steps.length + ' Parts Configured</span><span>Discount: None</span></div>' +
+      '<div class="pc-builder-bottom-actions">' +
+      '<button class="pc-builder-button" type="button" data-back ' + (state.currentStep === 0 ? "disabled" : "") + '>BACK</button>' +
+      (!step.required ? '<button class="pc-builder-button" type="button" data-skip>SKIP PART</button>' : "") +
+      '<button class="pc-builder-button pc-builder-button--primary" type="button" data-next ' + (step.required && !state.selections[step.publicId] ? "disabled" : "") + '>' + (state.currentStep === steps.length - 1 ? "PREVIEW" : "NEXT") + '</button>' +
       "</div>" +
+      "</footer>" +
       "</div>";
 
     bind(root, data, state);
@@ -205,38 +266,34 @@
       compatibleProducts
         .map(function (product) {
           var selected = state.selections[step.publicId]?.variantId === product.variantId;
-          var reasons = compatibilityFor(step, product, steps, state, rules);
-          var incompatible = reasons.length > 0;
+          var unavailable = !product.available || product.purchasable === false;
+          var availabilityLabel = product.purchasable === false
+            ? (product.unavailableReason === "NOT_PUBLISHED" ? "Not available on the Online Store" : "Currently unavailable")
+            : (!product.available ? "Out of stock" : "Available");
           return (
-            '<button class="pc-builder-card" type="button" data-variant-id="' +
+            '<button class="pc-builder-product-row' + (selected ? " is-selected" : "") + '" type="button" data-variant-id="' +
             escapeHtml(product.variantId) +
             '" aria-pressed="' +
             selected +
             '" ' +
-            ((!product.available || product.purchasable === false || incompatible) ? "disabled" : "") +
+            (unavailable ? "disabled" : "") +
             ">" +
             (product.image
-              ? '<img class="pc-builder-card__image" src="' +
+              ? '<img class="pc-builder-product-row__image" src="' +
                 escapeHtml(product.image.url) +
                 '" alt="' +
                 escapeHtml(product.image.altText || product.productTitle) +
                 '" loading="lazy">'
-              : '<div class="pc-builder-card__fallback" aria-hidden="true">No image</div>') +
-            '<span class="pc-builder-card__body">' +
-            '<strong class="pc-builder-card__title">' +
+              : '<span class="pc-builder-product-row__fallback" aria-hidden="true">No image</span>') +
+            '<span class="pc-builder-product-row__body">' +
+            '<strong class="pc-builder-product-row__title">' +
             escapeHtml(product.productTitle) +
             "</strong>" +
-            (product.variantTitle ? '<span class="pc-builder-muted">' + escapeHtml(product.variantTitle) + "</span>" : "") +
-            (product.vendor ? '<span class="pc-builder-muted">' + escapeHtml(product.vendor) + "</span>" : "") +
-            '<span class="pc-builder-price">' +
-            money(product.price) +
+            (product.variantTitle ? '<span class="pc-builder-product-row__variant">' + escapeHtml(product.variantTitle) + "</span>" : "") +
+            (product.vendor ? '<span class="pc-builder-product-row__vendor">' + escapeHtml(product.vendor) + "</span>" : "") +
+            '<span class="pc-builder-product-row__price">' + money(product.price) + "</span>" +
             "</span>" +
-            '<span class="pc-builder-muted">' +
-            (product.purchasable === false
-              ? (product.unavailableReason === "NOT_PUBLISHED" ? "Not available on the Online Store" : "Currently unavailable")
-              : (!product.available ? "Out of stock" : "Available")) +
-            "</span>" +
-            "</span></button>"
+            '<span class="pc-builder-product-row__action">' + (selected ? "ADDED" : unavailable ? availabilityLabel : "ADD PART") + "</span></button>"
           );
         })
         .join("") +
@@ -244,34 +301,67 @@
     );
   }
 
-  function summaryMarkup(steps, state, runningTotal) {
+  function summaryMarkup(builder, steps, state, runningTotal) {
+    var selectedSteps = steps.filter(function (step) { return Boolean(state.selections[step.publicId]); });
+    var leadStep = selectedSteps[0] || steps[0];
     return (
-      '<aside class="pc-builder-summary" aria-label="Selected build summary">' +
-      "<h3>Selected build</h3>" +
-      '<ul class="pc-builder-summary-list">' +
-      steps
-        .map(function (step) {
-          var selection = state.selections[step.publicId];
-          return (
-            "<li><span>" +
-            escapeHtml(step.name) +
-            "</span><span>" +
-            (selection ? money(selection.price) : "Not selected") +
-            "</span></li>"
-          );
-        })
-        .join("") +
-      "</ul>" +
-      '<div class="pc-builder-total"><span>Total</span><span>' +
-      (runningTotal ? money(runningTotal) : "Not started") +
-      "</span></div>" +
-      '<button class="pc-builder-button pc-builder-button--primary" type="button" data-add ' +
-      (Object.keys(state.selections).length ? "" : "disabled") + ">Add build to cart</button>" +
-      "</aside>"
+      '<div class="pc-builder-shell pc-builder-shell--summary">' +
+      '<header class="pc-builder-topbar pc-builder-topbar--summary">' +
+      '<button class="pc-builder-button pc-builder-button--exit" type="button" data-exit><span aria-hidden="true">&larr;</span> EXIT</button>' +
+      '<div class="pc-builder-summary-heading"><strong>' + escapeHtml(builder.name) + '</strong><span>Selected Components</span></div>' +
+      '<button class="pc-builder-button pc-builder-button--preview" type="button" data-edit>EDIT BUILD</button>' +
+      "</header>" +
+      '<div class="pc-builder-summary-workspace">' +
+      '<section class="pc-builder-visual-panel pc-builder-visual-panel--summary" aria-label="Build preview">' +
+      '<div class="pc-builder-visual">' + visualMarkup(leadStep, state) + "</div>" +
+      '<p class="pc-builder-summary-caption">' + (selectedSteps.length ? escapeHtml(selectedSteps[0].name) + " selected" : "No components selected") + '</p>' +
+      "</section>" +
+      '<section class="pc-builder-selected-panel" aria-label="Selected components">' +
+      '<div class="pc-builder-selected-heading"><h2>Selected Components</h2><span>' + selectedCount(state) + ' items | ' + (runningTotal ? money(runningTotal) : "Not started") + '</span></div>' +
+      '<div class="pc-builder-selected-list">' +
+      (selectedSteps.length ? selectedSteps.map(function (step) {
+        var selection = state.selections[step.publicId];
+        var product = selectedProduct(step, state);
+        return '<article class="pc-builder-selected-row">' +
+          (product && product.image ? '<img class="pc-builder-selected-row__image" src="' + escapeHtml(product.image.url) + '" alt="' + escapeHtml(product.image.altText || product.productTitle) + '">' : '<span class="pc-builder-selected-row__fallback">No image</span>') +
+          '<div class="pc-builder-selected-row__body"><span class="pc-builder-selected-row__step">' + escapeHtml(step.name) + '</span><strong>' + escapeHtml(product ? product.productTitle : step.name) + '</strong><span>Quantity: 1</span></div>' +
+          '<strong class="pc-builder-selected-row__price">' + money(selection.price) + '</strong>' +
+          '</article>';
+      }).join("") : '<div class="pc-builder-empty">Select components to see the bundle summary.</div>') +
+      "</div>" +
+      "</section>" +
+      "</div>" +
+      '<footer class="pc-builder-bottom-bar pc-builder-bottom-bar--summary">' +
+      '<div class="pc-builder-build-totals"><strong>BUILD TOTALS</strong><span>' + (runningTotal ? money(runningTotal) : "Not started") + '</span><span>' + selectedCount(state) + ' Parts Configured</span><span>Discount: None</span></div>' +
+      '<div class="pc-builder-bottom-actions"><button class="pc-builder-button" type="button" data-edit>EDIT BUILD</button><button class="pc-builder-button pc-builder-button--primary" type="button" data-add ' + (selectedCount(state) ? "" : "disabled") + '>ADD TO CART</button></div>' +
+      "</footer>" +
+      "</div>"
     );
   }
 
   function bind(root, data, state) {
+    root.querySelectorAll("[data-preview]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        state.preview = true;
+        render(root, data, state);
+      });
+    });
+    root.querySelectorAll("[data-edit]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        state.preview = false;
+        render(root, data, state);
+      });
+    });
+    root.querySelectorAll("[data-exit]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (window.history.length > 1) window.history.back();
+        else window.location.assign("/");
+      });
+    });
+    root.querySelector("[data-toggle-products]")?.addEventListener("click", function () {
+      state.catalogCollapsed = !state.catalogCollapsed;
+      render(root, data, state);
+    });
     root.querySelectorAll("[data-step-index]").forEach(function (button) {
       button.addEventListener("click", function () {
         var targetIndex = Number(button.dataset.stepIndex);
@@ -308,19 +398,33 @@
       state.search = event.target.value;
       render(root, data, state);
     });
+    root.querySelector("[data-sort]")?.addEventListener("change", function (event) {
+      state.sort = event.target.value;
+      render(root, data, state);
+    });
     root.querySelector("[data-back]")?.addEventListener("click", function () {
       state.currentStep = Math.max(0, state.currentStep - 1);
       state.search = "";
       render(root, data, state);
     });
     root.querySelector("[data-next]")?.addEventListener("click", function () {
-      loadStep(root, data, state, Math.min(data.builder.steps.length - 1, state.currentStep + 1));
+      if (state.currentStep === data.builder.steps.length - 1) {
+        state.preview = true;
+        render(root, data, state);
+        return;
+      }
+      loadStep(root, data, state, state.currentStep + 1);
     });
     root.querySelector("[data-skip]")?.addEventListener("click", function () {
       var step = data.builder.steps[state.currentStep];
       if (step.required) return;
       delete state.selections[step.publicId];
       if (state.skippedStepIds.indexOf(step.publicId) === -1) state.skippedStepIds.push(step.publicId);
+      if (state.currentStep === data.builder.steps.length - 1) {
+        state.preview = true;
+        render(root, data, state);
+        return;
+      }
       state.currentStep = Math.min(data.builder.steps.length - 1, state.currentStep + 1);
       state.search = "";
       render(root, data, state);
@@ -377,7 +481,16 @@
               if (response.ok) return response;
               return response.text().then(function (body) {
                 console.error("PC Builder cart attempt 1 failed", { status: response.status, responseBody: body, withProperties: true });
-                return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items }) });
+                var fallbackItems = items.map(function (item) {
+                  return { id: item.id, quantity: item.quantity };
+                });
+                console.info("PC Builder cart fallback submit", {
+                  itemCount: fallbackItems.length,
+                  variantIds: fallbackItems.map(function (item) { return item.id; }),
+                  quantities: fallbackItems.map(function (item) { return item.quantity; }),
+                  withProperties: false,
+                });
+                return fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: fallbackItems }) });
               });
             });
         })
@@ -390,6 +503,7 @@
               throw new Error("The build was validated, but Shopify could not add it to the cart." + (detail ? " " + detail : ""));
             });
           }
+          console.info("PC Builder cart attempt 2 succeeded", { status: response.status, withProperties: false });
           return fetch((root.getAttribute("data-proxy-path") || "/apps/pc-builder-1") + "/builder", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ action: "mark_cart_added", sessionId: state.sessionId }) });
         })
         .then(function (response) {
