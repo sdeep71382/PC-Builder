@@ -15,8 +15,11 @@
               "__typename": "ProductVariant",
               "id": "gid://shopify/ProductVariant/1",
               "title": null,
-              "product": { "title": "Unused" }
-            }
+              "product": {
+                "title": "Unused"
+              }
+            },
+            "discountPercent": null
           }
         ]
       }

@@ -15,6 +15,7 @@ import {
   parseSpecificationValue,
   validateSpecificationDefinitionInput,
 } from "./product-specification-validation";
+import { buildSpecificationImportPlan, type CsvImportRowError } from "./csv-import";
 
 const prisma = new PrismaClient();
 
@@ -239,6 +240,42 @@ export async function saveProductSpecifications(
   }
 
   await prisma.$transaction(operations);
+}
+
+export interface CsvImportSummary {
+  importedRows: number;
+  errors: CsvImportRowError[];
+}
+
+export async function importProductSpecificationsFromCsv(
+  shopId: string,
+  data: {
+    csvText: string;
+    definitions: SpecificationDefinition[];
+    products: ShopifyCollectionProduct[];
+  }
+): Promise<CsvImportSummary> {
+  const plan = buildSpecificationImportPlan(data.csvText, data.definitions, data.products);
+  const errors = [...plan.errors];
+  let importedRows = 0;
+
+  for (const entry of plan.entries) {
+    try {
+      await saveProductSpecifications(shopId, {
+        shopifyProductId: entry.shopifyProductId,
+        shopifyVariantId: entry.shopifyVariantId,
+        values: entry.values,
+        source: "import",
+        verified: true,
+      });
+      importedRows += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to import this row.";
+      errors.push({ row: -1, message: `${entry.productTitle} / ${entry.variantTitle}: ${message}` });
+    }
+  }
+
+  return { importedRows, errors };
 }
 
 export async function listShopifyProductsForCollection(

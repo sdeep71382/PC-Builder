@@ -6,6 +6,7 @@ query CartTransformRunInput {
       session: attribute(key: "_pc_build_session") { value }
       parent: attribute(key: "_pc_bundle_parent_variant") { value }
       component: attribute(key: "_pc_component") { value }
+      discountPercent: attribute(key: "_pc_discount_percent") { value }
       merchandise {
         __typename
         ... on ProductVariant {

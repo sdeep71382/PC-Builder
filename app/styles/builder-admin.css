@@ -556,6 +556,28 @@
   margin-top: 12px;
 }
 
+.builder-csv-import {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+  border: 1px dashed #b7c2cf;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.builder-csv-import__summary {
+  border-top: 1px solid #dcdfe4;
+  padding-top: 10px;
+}
+
+.builder-csv-import__errors {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: #9b3b00;
+  font-size: 12px;
+}
+
 @media (max-width: 900px) {
   .builder-admin__header,
   .builder-list__row,

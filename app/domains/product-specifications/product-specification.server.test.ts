@@ -167,6 +167,7 @@ import {
   findShopifyVariantInCollection,
   getSpecificationDefinitionsForStep,
   getSpecificationsForVariant,
+  importProductSpecificationsFromCsv,
   saveProductSpecifications,
 } from "./product-specification.server";
 
@@ -249,6 +250,50 @@ describe("product specification persistence", () => {
         values: { [definition.id]: "AM5" },
       })
     ).rejects.toThrow("invalid for this shop");
+  });
+});
+
+describe("CSV specification import", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("imports rows matched by SKU and reports unmatched rows as errors", async () => {
+    const definition = await createSpecificationDefinition("shop-f", {
+      category: "CPU",
+      key: "socket",
+      label: "Socket",
+      dataType: "STRING",
+      unit: null,
+      required: false,
+      config: null,
+    });
+
+    const products = [
+      {
+        id: "gid://shopify/Product/1",
+        title: "Ryzen 7 Builder CPU",
+        handle: "ryzen-7-builder-cpu",
+        featuredImage: null,
+        variants: [{ id: "gid://shopify/ProductVariant/10", title: "Default Title", sku: "RYZEN7-A" }],
+      },
+    ];
+
+    const summary = await importProductSpecificationsFromCsv("shop-f", {
+      csvText: "sku,socket\nRYZEN7-A,AM5\nMISSING-SKU,AM4\n",
+      definitions: [definition],
+      products,
+    });
+
+    expect(summary.importedRows).toBe(1);
+    expect(summary.errors).toEqual([
+      { row: 3, message: expect.stringContaining("MISSING-SKU") },
+    ]);
+
+    const values = await getSpecificationsForVariant("shop-f", "gid://shopify/ProductVariant/10");
+    expect(values).toHaveLength(1);
+    expect(values[0].value).toBe("AM5");
+    expect(values[0].source).toBe("import");
   });
 });
 

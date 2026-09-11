@@ -47,10 +47,29 @@ model Builder {
   compatibilityRules CompatibilityRule[]
   buildSessions BuildSession[]
   orderAttributions OrderAttribution[]
+  discount     BuilderDiscount?
 
   @@index([shopId])
   @@index([shopId, isDefault])
   @@map("builders")
+}
+
+model BuilderDiscount {
+  id        String  @id @default(cuid())
+  shopId    String
+  builderId String  @unique
+  builder   Builder @relation(fields: [builderId], references: [id], onDelete: Cascade)
+
+  enabled            Boolean @default(true)
+  thresholdAmount    Decimal
+  discountPercentage Decimal
+  label              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shopId])
+  @@map("builder_discounts")
 }
 
 model BundleParent {

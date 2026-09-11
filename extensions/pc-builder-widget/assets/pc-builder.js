@@ -23,6 +23,8 @@
       sort: "default",
       preview: false,
       catalogCollapsed: false,
+      prefetchCache: {},
+      prefetchInFlight: {},
     };
   }
 
@@ -37,6 +39,45 @@
       return sum + Number(selection.price.amount);
     }, 0);
     return { amount: amount.toFixed(2), currencyCode: currencyCode };
+  }
+
+  function discountProgress(builder, runningTotal) {
+    var discount = builder.discount;
+    if (!discount) return null;
+    var threshold = Number(discount.thresholdAmount);
+    var percentage = Number(discount.discountPercentage);
+    if (!(threshold > 0) || !(percentage > 0)) return null;
+    var currencyCode = runningTotal ? runningTotal.currencyCode : "USD";
+    var current = runningTotal ? Number(runningTotal.amount) : 0;
+    var reached = current >= threshold;
+    var percentToThreshold = Math.max(0, Math.min(100, (current / threshold) * 100));
+    return {
+      label: discount.label,
+      percentage: percentage,
+      reached: reached,
+      percentToThreshold: percentToThreshold,
+      remaining: { amount: Math.max(0, threshold - current).toFixed(2), currencyCode: currencyCode },
+    };
+  }
+
+  function discountBarMarkup(builder, runningTotal) {
+    var progress = discountProgress(builder, runningTotal);
+    if (!progress) return "";
+    var message = progress.reached
+      ? (progress.label ? escapeHtml(progress.label) + " unlocked — " : "") + progress.percentage + "% off applied at checkout"
+      : "Spend " + money(progress.remaining) + " more to unlock " + progress.percentage + "% off";
+    return (
+      '<div class="pc-builder-discount-bar' + (progress.reached ? " is-reached" : "") + '" role="status">' +
+      '<div class="pc-builder-discount-bar__track"><div class="pc-builder-discount-bar__fill" style="width:' + progress.percentToThreshold + '%"></div></div>' +
+      '<span class="pc-builder-discount-bar__label">' + message + "</span>" +
+      "</div>"
+    );
+  }
+
+  function discountLabel(builder, runningTotal) {
+    var progress = discountProgress(builder, runningTotal);
+    if (!progress) return "None";
+    return progress.reached ? progress.percentage + "% applied" : "Not yet unlocked";
   }
 
   function filteredProducts(products, query) {
@@ -220,8 +261,8 @@
       '<div class="pc-builder-visual">' + visualMarkup(step, state) + "</div>" +
       specificationMarkup(selectedProduct(step, state)) +
       "</section>" +
-      '<button class="pc-builder-collapse" type="button" data-toggle-products aria-label="Toggle product list" title="Toggle product list"><span aria-hidden="true">&lsaquo;</span></button>' +
-      '<section class="pc-builder-catalog" aria-label="Available products">' +
+      '<button class="pc-builder-collapse" type="button" data-toggle-products aria-controls="pc-builder-catalog" aria-expanded="' + (!state.catalogCollapsed) + '" aria-label="' + (state.catalogCollapsed ? "Show product catalog" : "Hide product catalog") + '" title="' + (state.catalogCollapsed ? "Show product catalog" : "Hide product catalog") + '"><span aria-hidden="true">' + (state.catalogCollapsed ? "&rsaquo;" : "&lsaquo;") + '</span></button>' +
+      '<section class="pc-builder-catalog" id="pc-builder-catalog" aria-label="Available products">' +
       '<div class="pc-builder-catalog-toolbar">' +
       '<label class="pc-builder-search-label">Search ' + escapeHtml(step.name) + ' models<input class="pc-builder-search" data-search type="search" value="' + escapeHtml(state.search) + '" autocomplete="off"></label>' +
       '<label class="pc-builder-sort-label"><span class="pc-builder-visually-hidden">Sort products</span><select class="pc-builder-sort" data-sort>' +
@@ -235,8 +276,9 @@
       productMarkup(step, products, state, steps, data.compatibilityRules) +
       "</section>" +
       "</div>" +
+      discountBarMarkup(builder, runningTotal) +
       '<footer class="pc-builder-bottom-bar">' +
-      '<div class="pc-builder-build-totals"><strong>BUILD TOTALS</strong><span>' + (runningTotal ? money(runningTotal) : "Not started") + '</span><span>' + selectedCount(state) + ' of ' + steps.length + ' Parts Configured</span><span>Discount: None</span></div>' +
+      '<div class="pc-builder-build-totals"><strong>BUILD TOTALS</strong><span>' + (runningTotal ? money(runningTotal) : "Not started") + '</span><span>' + selectedCount(state) + ' of ' + steps.length + ' Parts Configured</span><span>Discount: ' + discountLabel(builder, runningTotal) + '</span></div>' +
       '<div class="pc-builder-bottom-actions">' +
       '<button class="pc-builder-button" type="button" data-back ' + (state.currentStep === 0 ? "disabled" : "") + '>BACK</button>' +
       (!step.required ? '<button class="pc-builder-button" type="button" data-skip>SKIP PART</button>' : "") +
@@ -331,8 +373,9 @@
       "</div>" +
       "</section>" +
       "</div>" +
+      discountBarMarkup(builder, runningTotal) +
       '<footer class="pc-builder-bottom-bar pc-builder-bottom-bar--summary">' +
-      '<div class="pc-builder-build-totals"><strong>BUILD TOTALS</strong><span>' + (runningTotal ? money(runningTotal) : "Not started") + '</span><span>' + selectedCount(state) + ' Parts Configured</span><span>Discount: None</span></div>' +
+      '<div class="pc-builder-build-totals"><strong>BUILD TOTALS</strong><span>' + (runningTotal ? money(runningTotal) : "Not started") + '</span><span>' + selectedCount(state) + ' Parts Configured</span><span>Discount: ' + discountLabel(builder, runningTotal) + '</span></div>' +
       '<div class="pc-builder-bottom-actions"><button class="pc-builder-button" type="button" data-edit>EDIT BUILD</button><button class="pc-builder-button pc-builder-button--primary" type="button" data-add ' + (selectedCount(state) ? "" : "disabled") + '>ADD TO CART</button></div>' +
       "</footer>" +
       "</div>"
@@ -392,6 +435,7 @@
         });
         stepsAfterSelection(data, state);
         render(root, data, state);
+        prefetchNextStep(root, data, state);
       });
     });
     root.querySelector("[data-search]")?.addEventListener("input", function (event) {
@@ -444,17 +488,20 @@
         .then(function (validated) {
           var bundleParentGid = validated.bundleParentVariantId;
           if (!bundleParentGid) throw new Error("The bundle is temporarily unavailable. Please try again.");
+          var discountPercent = validated.discount ? validated.discount.percentage : null;
           var items = validated.selections.map(function (selection) {
+            var properties = {
+              _pc_builder: data.builder.name,
+              _pc_build_session: validated.sessionId,
+              _pc_bundle_parent_variant: bundleParentGid,
+              _pc_component: selection.stepKey,
+              _pc_builder_step: selection.stepId,
+            };
+            if (discountPercent) properties._pc_discount_percent = String(discountPercent);
             return {
               id: String(gidNumericId(selection.variantId)),
               quantity: 1,
-              properties: {
-                _pc_builder: data.builder.name,
-                _pc_build_session: validated.sessionId,
-                _pc_bundle_parent_variant: bundleParentGid,
-                _pc_component: selection.stepKey,
-                _pc_builder_step: selection.stepId,
-              },
+              properties: properties,
             };
           });
           console.info("PC Builder cart payload", {
@@ -515,14 +562,18 @@
     });
   }
 
-  function loadStep(root, data, state, targetIndex) {
-    var nextStep = data.builder.steps[targetIndex];
-    if (!nextStep) return;
+  function selectionsPayload(state) {
     var payload = {};
     Object.keys(state.selections).forEach(function (key) { payload[key] = state.selections[key].variantId; });
-    var nextButton = root.querySelector("[data-next]");
-    if (nextButton) { nextButton.disabled = true; nextButton.textContent = "Loading..."; }
-    fetch((root.getAttribute("data-proxy-path") || "/apps/pc-builder-1") + "/builder", {
+    return payload;
+  }
+
+  function selectionsKey(payload) {
+    return JSON.stringify(payload);
+  }
+
+  function fetchCompatibleProducts(root, data, nextStep, payload) {
+    return fetch((root.getAttribute("data-proxy-path") || "/apps/pc-builder-1") + "/builder", {
       method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ action: "compatible_products", builderId: data.builder.publicId, stepKey: nextStep.publicId, selections: payload })
     }).then(function (response) {
@@ -530,8 +581,52 @@
         if (!response.ok) throw new Error(body.error || "Could not load compatible products.");
         return body;
       });
-    }).then(function (body) {
+    });
+  }
+
+  // Silently warms the next step's compatible-product cache as soon as a
+  // component is selected, so clicking Next can render instantly instead of
+  // waiting on a fetch that starts only at click time.
+  function prefetchNextStep(root, data, state) {
+    var targetIndex = state.currentStep + 1;
+    var nextStep = data.builder.steps[targetIndex];
+    if (!nextStep) return;
+    var payload = selectionsPayload(state);
+    var key = selectionsKey(payload);
+    var cached = state.prefetchCache[targetIndex];
+    if (cached && cached.key === key) return;
+    if (state.prefetchInFlight[targetIndex] === key) return;
+    state.prefetchInFlight[targetIndex] = key;
+    fetchCompatibleProducts(root, data, nextStep, payload)
+      .then(function (body) {
+        state.prefetchCache[targetIndex] = { key: key, products: body.products || [] };
+      })
+      .catch(function () {
+        // Swallow silently: loadStep() retries on demand if the shopper clicks Next.
+      })
+      .then(function () {
+        if (state.prefetchInFlight[targetIndex] === key) delete state.prefetchInFlight[targetIndex];
+      });
+  }
+
+  function loadStep(root, data, state, targetIndex) {
+    var nextStep = data.builder.steps[targetIndex];
+    if (!nextStep) return;
+    var payload = selectionsPayload(state);
+    var key = selectionsKey(payload);
+    var cached = state.prefetchCache[targetIndex];
+    if (cached && cached.key === key) {
+      nextStep.products = cached.products;
+      state.currentStep = targetIndex;
+      state.search = "";
+      render(root, data, state);
+      return;
+    }
+    var nextButton = root.querySelector("[data-next]");
+    if (nextButton) { nextButton.disabled = true; nextButton.textContent = "Loading..."; }
+    fetchCompatibleProducts(root, data, nextStep, payload).then(function (body) {
       nextStep.products = body.products || [];
+      state.prefetchCache[targetIndex] = { key: key, products: nextStep.products };
       state.currentStep = targetIndex;
       state.search = "";
       render(root, data, state);

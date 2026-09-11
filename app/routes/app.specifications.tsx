@@ -12,6 +12,7 @@ import {
   getSpecificationCompletionForVariants,
   getSpecificationDefinitionsForStep,
   getSpecificationsForVariant,
+  importProductSpecificationsFromCsv,
   listShopifyProductsForCollection,
   saveProductSpecifications,
 } from "../domains/product-specifications/product-specification.server";
@@ -22,6 +23,10 @@ interface ActionData {
   feedback?: {
     type: "success" | "validation" | "authorization" | "temporary";
     message: string;
+  };
+  importSummary?: {
+    importedRows: number;
+    errors: Array<{ row: number; message: string }>;
   };
 }
 
@@ -190,8 +195,6 @@ function demoValue(category: string, key: string, title: string): string {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
-  const shopifyProductId = String(formData.get("shopifyProductId") ?? "");
-  const shopifyVariantId = String(formData.get("shopifyVariantId") ?? "");
 
   const url = new URL(request.url);
   const builderId = url.searchParams.get("builderId");
@@ -220,6 +223,43 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       { status: 400 }
     );
   }
+
+  if (formData.get("intent") === "import-csv") {
+    const file = formData.get("csv");
+    if (!(file instanceof File) || file.size === 0) {
+      return Response.json(
+        { feedback: { type: "validation", message: "Choose a CSV file to import." } },
+        { status: 400 }
+      );
+    }
+
+    const productsResult = await listShopifyProductsForCollection(admin, assignment.shopifyCollectionId);
+    if (productsResult.type === "failure") {
+      return Response.json(
+        { feedback: { type: "validation", message: productsResult.message } },
+        { status: 400 }
+      );
+    }
+
+    const definitions = await getSpecificationDefinitionsForStep(session.shop, step.name);
+    const csvText = await file.text();
+    const summary = await importProductSpecificationsFromCsv(session.shop, {
+      csvText,
+      definitions,
+      products: productsResult.products,
+    });
+
+    return Response.json({
+      feedback:
+        summary.importedRows > 0
+          ? { type: "success", message: `Imported specifications for ${summary.importedRows} product${summary.importedRows === 1 ? "" : "s"}.` }
+          : { type: "validation", message: "No rows were imported. Check the errors below." },
+      importSummary: summary,
+    });
+  }
+
+  const shopifyProductId = String(formData.get("shopifyProductId") ?? "");
+  const shopifyVariantId = String(formData.get("shopifyVariantId") ?? "");
 
   const variantLookup = await findShopifyVariantInCollection(
     admin,
@@ -298,6 +338,7 @@ export default function ProductSpecificationsRoute() {
     <SpecificationWorkspace
       {...data}
       feedback={actionData?.feedback ?? null}
+      importSummary={actionData?.importSummary ?? null}
     />
   );
 }

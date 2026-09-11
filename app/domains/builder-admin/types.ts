@@ -102,3 +102,15 @@ export interface ActionFeedback {
   type: "success" | "validation" | "authorization" | "stale" | "temporary";
   message: string;
 }
+
+export interface BuilderDiscount {
+  id: string;
+  shopId: string;
+  builderId: string;
+  enabled: boolean;
+  thresholdAmount: string;
+  discountPercentage: string;
+  label: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

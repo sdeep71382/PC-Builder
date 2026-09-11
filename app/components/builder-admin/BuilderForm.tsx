@@ -72,6 +72,14 @@ export function BuilderForm({ builder, feedback }: BuilderFormProps) {
                 Compatibility rules
               </Link>
             )}
+            {isEditing && (
+              <Link
+                className="builder-button-link"
+                to={`/app/builders/${builder?.id}/discount`}
+              >
+                Spend discount
+              </Link>
+            )}
           </div>
         </div>
 

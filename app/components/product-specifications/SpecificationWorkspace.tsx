@@ -25,6 +25,10 @@ interface SpecificationWorkspaceProps {
     type: "success" | "validation" | "authorization" | "temporary";
     message: string;
   } | null;
+  importSummary?: {
+    importedRows: number;
+    errors: Array<{ row: number; message: string }>;
+  } | null;
 }
 
 export function SpecificationWorkspace({
@@ -41,8 +45,12 @@ export function SpecificationWorkspace({
   completion,
   lookupError,
   feedback,
+  importSummary,
 }: SpecificationWorkspaceProps) {
   const fetcher = useFetcher();
+  const importFetcher = useFetcher<{ importSummary?: SpecificationWorkspaceProps["importSummary"] }>();
+  const activeImportSummary = importFetcher.data?.importSummary ?? importSummary ?? null;
+  const isImporting = importFetcher.state !== "idle";
   const [builderPickerValue, setBuilderPickerValue] = useState(selectedBuilderId ?? "");
   const [stepPickerValue, setStepPickerValue] = useState(selectedStepId ?? "");
   const selectedBuilder =
@@ -226,6 +234,42 @@ export function SpecificationWorkspace({
           <div className="builder-admin__grid builder-admin__grid--two builder-admin__grid--top">
             <div className="builder-card">
               <h2 className="builder-card__title">Products in assigned collection</h2>
+              {definitions.length > 0 && (
+                <div className="builder-csv-import">
+                  <importFetcher.Form method="post" encType="multipart/form-data">
+                    <input type="hidden" name="intent" value="import-csv" />
+                    <div className="builder-field">
+                      <label htmlFor="csv-file">Bulk import specifications (CSV)</label>
+                      <input id="csv-file" name="csv" type="file" accept=".csv,text/csv" required />
+                    </div>
+                    <p className="builder-card__text">
+                      Columns: <code>handle</code> or <code>sku</code> to match a variant, plus one
+                      column per key ({definitions.map((definition) => definition.key).join(", ")}).
+                    </p>
+                    <s-button type="submit" disabled={isImporting}>
+                      {isImporting ? "Importing..." : "Import CSV"}
+                    </s-button>
+                  </importFetcher.Form>
+                  {activeImportSummary && (
+                    <div className="builder-csv-import__summary" role="status" aria-live="polite">
+                      <p className="builder-card__text">
+                        Imported {activeImportSummary.importedRows} row
+                        {activeImportSummary.importedRows === 1 ? "" : "s"}.
+                      </p>
+                      {activeImportSummary.errors.length > 0 && (
+                        <ul className="builder-csv-import__errors">
+                          {activeImportSummary.errors.map((error, index) => (
+                            <li key={index}>
+                              {error.row > 0 ? `Row ${error.row}: ` : ""}
+                              {error.message}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {products.length === 0 ? (
                 <p className="builder-card__text">
                   This Shopify collection has no products yet.

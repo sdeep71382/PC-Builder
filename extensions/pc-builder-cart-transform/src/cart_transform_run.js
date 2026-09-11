@@ -27,12 +27,24 @@ export function cartTransformRun(input) {
       continue;
     }
     const groupKey = `${sessionId}:${parentVariantId}`;
-    const group = groups.get(groupKey) || { sessionId, parentVariantId, cartLines: [], components: [] };
+    const group = groups.get(groupKey) || {
+      sessionId,
+      parentVariantId,
+      cartLines: [],
+      components: [],
+      discountPercent: null,
+    };
     group.cartLines.push({ cartLineId: line.id, quantity: line.quantity });
     group.components.push({
       name: line.component?.value || "Component",
       title: line.merchandise.product?.title || line.merchandise.title || "Selected component",
     });
+    if (group.discountPercent === null) {
+      const parsedDiscount = Number(line.discountPercent?.value);
+      if (Number.isFinite(parsedDiscount) && parsedDiscount > 0 && parsedDiscount <= 100) {
+        group.discountPercent = parsedDiscount;
+      }
+    }
     groups.set(groupKey, group);
   }
 
@@ -47,6 +59,9 @@ export function cartTransformRun(input) {
             key: component.name,
             value: component.title,
           })),
+          ...(group.discountPercent
+            ? { price: { percentageDecrease: { value: group.discountPercent } } }
+            : {}),
         },
       });
     }
@@ -59,6 +74,7 @@ export function cartTransformRun(input) {
       sessionId: group.sessionId,
       parentVariantId: group.parentVariantId,
       componentLineCount: group.cartLines.length,
+      discountPercent: group.discountPercent,
     })),
     mergeCount: operations.length,
   }));

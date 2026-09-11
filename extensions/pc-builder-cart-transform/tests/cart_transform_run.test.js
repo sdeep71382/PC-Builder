@@ -94,6 +94,88 @@ describe("PC Builder cart transform", () => {
     ]);
   });
 
+  test("applies a percentage price decrease when the shopper unlocked a spend discount", () => {
+    const result = cartTransformRun({
+      cart: {
+        lines: [
+          {
+            id: "gid://shopify/CartLine/1",
+            quantity: 1,
+            session: { value: "pcb_build_1" },
+            parent: { value: "gid://shopify/ProductVariant/101" },
+            component: { value: "CPU" },
+            discountPercent: { value: "10" },
+            merchandise: {
+              __typename: "ProductVariant",
+              id: "gid://shopify/ProductVariant/101",
+              title: "Default Title",
+              product: { title: "Xeon Builder CPU" },
+            },
+          },
+          {
+            id: "gid://shopify/CartLine/2",
+            quantity: 1,
+            session: { value: "pcb_build_1" },
+            parent: { value: "gid://shopify/ProductVariant/101" },
+            component: { value: "Case" },
+            discountPercent: { value: "10" },
+            merchandise: {
+              __typename: "ProductVariant",
+              id: "gid://shopify/ProductVariant/505",
+              title: "Default Title",
+              product: { title: "Full Tower Builder Case" },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.operations).toHaveLength(1);
+    expect(result.operations[0].linesMerge.price).toEqual({
+      percentageDecrease: { value: 10 },
+    });
+  });
+
+  test("ignores an out-of-range discount attribute and merges without a price adjustment", () => {
+    const result = cartTransformRun({
+      cart: {
+        lines: [
+          {
+            id: "gid://shopify/CartLine/1",
+            quantity: 1,
+            session: { value: "pcb_build_1" },
+            parent: { value: "gid://shopify/ProductVariant/101" },
+            component: { value: "CPU" },
+            discountPercent: { value: "150" },
+            merchandise: {
+              __typename: "ProductVariant",
+              id: "gid://shopify/ProductVariant/101",
+              title: "Default Title",
+              product: { title: "Xeon Builder CPU" },
+            },
+          },
+          {
+            id: "gid://shopify/CartLine/2",
+            quantity: 1,
+            session: { value: "pcb_build_1" },
+            parent: { value: "gid://shopify/ProductVariant/101" },
+            component: { value: "Case" },
+            discountPercent: null,
+            merchandise: {
+              __typename: "ProductVariant",
+              id: "gid://shopify/ProductVariant/505",
+              title: "Default Title",
+              product: { title: "Full Tower Builder Case" },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.operations).toHaveLength(1);
+    expect(result.operations[0].linesMerge.price).toBeUndefined();
+  });
+
   test("ignores cart lines without both builder markers", () => {
     const result = cartTransformRun({
       cart: {

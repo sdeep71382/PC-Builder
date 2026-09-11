@@ -261,6 +261,42 @@ describe("public storefront builder service", () => {
     expect(result.type).toBe("success");
   });
 
+  it("surfaces an enabled spend discount to the storefront", async () => {
+    builders.published = publishedBuilder({
+      discount: { enabled: true, thresholdAmount: "1000", discountPercentage: "10", label: "Big build bonus" },
+    });
+
+    const result = await getPublicStorefrontBuilder(
+      "shop-a",
+      "pb_11111111111111111111111111111111",
+      storefront() as never
+    );
+
+    expect(result.type).toBe("success");
+    if (result.type !== "success") return;
+    expect(result.data.builder.discount).toEqual({
+      thresholdAmount: "1000",
+      discountPercentage: "10",
+      label: "Big build bonus",
+    });
+  });
+
+  it("omits a disabled spend discount from the storefront payload", async () => {
+    builders.published = publishedBuilder({
+      discount: { enabled: false, thresholdAmount: "1000", discountPercentage: "10", label: null },
+    });
+
+    const result = await getPublicStorefrontBuilder(
+      "shop-a",
+      "pb_11111111111111111111111111111111",
+      storefront() as never
+    );
+
+    expect(result.type).toBe("success");
+    if (result.type !== "success") return;
+    expect(result.data.builder.discount).toBeNull();
+  });
+
   it("rejects malformed public builder identifiers", async () => {
     const result = await getPublicStorefrontBuilder("shop-a", "internal-builder-id", storefront() as never);
 

@@ -13,6 +13,7 @@ import type { CompatibilitySelection, CompatibilityRuleOperator, CompatibilityRu
 import type { StorefrontValidationResult, StorefrontValidationError } from "./types";
 import { upsertValidatedBuild } from "../build-sessions/build-session.server";
 import { getVariantPurchasability } from "./variant-purchasability";
+import { evaluateSpendDiscount } from "../builder-admin/discount-evaluation";
 
 const STOREFRONT_LOOKUP_TIMEOUT_MS = 10000;
 
@@ -39,6 +40,7 @@ export async function getPublicStorefrontBuilder(
           },
         },
       },
+      discount: true,
     },
   });
 
@@ -103,8 +105,20 @@ export async function getPublicStorefrontBuilder(
         description: builder.description,
       steps,
       compatibilityRules: compatibilityRules.map(toStorefrontRule),
+      discount: toStorefrontDiscount(builder.discount),
       },
     },
+  };
+}
+
+function toStorefrontDiscount(
+  discount: { enabled: boolean; thresholdAmount: unknown; discountPercentage: unknown; label: string | null } | null
+): StorefrontBuilderDto["builder"]["discount"] {
+  if (!discount || !discount.enabled) return null;
+  return {
+    thresholdAmount: String(discount.thresholdAmount),
+    discountPercentage: String(discount.discountPercentage),
+    label: discount.label,
   };
 }
 
@@ -162,7 +176,7 @@ export async function validateBuildForCart(
 ): Promise<StorefrontValidationResult> {
   const builder = await prisma.builder.findFirst({
     where: { shopId, publicId: publicBuilderId, status: "published" },
-    include: { builderSteps: { where: { enabled: true }, orderBy: { position: "asc" }, include: { assignments: { where: { referenceType: "collection" }, take: 1 } } } },
+    include: { builderSteps: { where: { enabled: true }, orderBy: { position: "asc" }, include: { assignments: { where: { referenceType: "collection" }, take: 1 } } }, discount: true },
   });
   if (!builder) throw new Error("Builder is not available.");
 
@@ -220,7 +234,13 @@ export async function validateBuildForCart(
       })),
     });
   }
-  return { valid, sessionId, errors, bundleParentVariantId, selections: cartSelections };
+  const discount = valid
+    ? evaluateSpendDiscount(
+        builder.discount,
+        cartSelections.reduce((sum, selection) => sum + Number(selection.price.amount), 0)
+      )
+    : null;
+  return { valid, sessionId, errors, bundleParentVariantId, selections: cartSelections, discount };
 }
 
 export function selectBundleParentVariantId(

@@ -5,7 +5,14 @@ export interface StorefrontBuilderDto {
     description: string | null;
     steps: StorefrontBuilderStepDto[];
     compatibilityRules: StorefrontCompatibilityRuleDto[];
+    discount: StorefrontDiscountDto | null;
   };
+}
+
+export interface StorefrontDiscountDto {
+  thresholdAmount: string;
+  discountPercentage: string;
+  label: string | null;
 }
 
 export interface StorefrontBuilderStepDto {
@@ -85,4 +92,5 @@ export interface StorefrontValidationResult {
   errors: StorefrontValidationError[];
   bundleParentVariantId?: string;
   selections: Array<{ stepKey: string; stepId: string; productId: string; variantId: string; price: StorefrontProductOptionDto["price"] }>;
+  discount?: { percentage: string; thresholdAmount: string } | null;
 }
